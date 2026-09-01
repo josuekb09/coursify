@@ -1,0 +1,14 @@
+{
+  "title": "Coursify",
+  "description": "Designed for educators, this minimalist dashboard streamlines resource management, enabling teachers to easily upload, access, and download curriculum materials.",
+  "icons": {
+    "icon": "/favicon.svg"
+  },
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

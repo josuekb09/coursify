@@ -1,0 +1,68 @@
+@import url("https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --color-canvas: #f6f5f2;
+  --color-surface: #ffffff;
+  --color-ink: #12141c;
+  --color-muted: #6b6f7a;
+  --color-line: #e7e5e0;
+  --color-line-strong: #d8d5ce;
+  --color-navy: #1a2b4a;
+  --color-navy-hover: #101d38;
+  --color-navy-soft: #eef1f7;
+
+  --font-display: "Archivo", sans-serif;
+  --font-sans: "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+img,
+video,
+iframe,
+embed,
+object,
+canvas {
+  max-width: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background-color: var(--color-navy);
+  color: #ffffff;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+*:hover {
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 8px;
+}
+*:hover::-webkit-scrollbar-thumb {
+  background-color: var(--color-line-strong);
+}
