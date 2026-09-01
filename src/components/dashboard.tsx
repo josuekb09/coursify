@@ -3,7 +3,7 @@ import EducatorCard from "@/components/educator-card"
 import Icons from "@/components/icons"
 import PostCard from "@/components/post-card"
 import { useApp } from "@/store"
-import { firstName, followButtonLabel, formatCount, searchEducators, todayLabel } from "@/utils"
+import { firstName, followButtonLabel, formatCount, rankEducatorSearchResults, todayLabel } from "@/utils"
 import { useMemo, useState, type FormEvent } from "react"
 
 export default function Dashboard({
@@ -49,7 +49,7 @@ export default function Dashboard({
 
   const colleagueMatches = useMemo(() => {
     if (needle.length < 2) return []
-    return searchEducators(educators, query, currentUser?.id).slice(0, 6)
+    return rankEducatorSearchResults(educators, query, currentUser?.id).slice(0, 6)
   }, [currentUser?.id, educators, needle, query])
 
   const suggestions = useMemo(() => {

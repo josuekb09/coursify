@@ -106,6 +106,7 @@ export default function App() {
   function goProfileFromSearch(id: string) {
     setProfileId(id)
     setView("profile")
+    setProfileEditing(false)
     setMenuOpen(false)
   }
 

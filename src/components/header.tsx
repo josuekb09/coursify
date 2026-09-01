@@ -3,7 +3,7 @@ import Icons from "@/components/icons"
 import Logo from "@/components/logo"
 import { useApp } from "@/store"
 import type { View } from "@/types"
-import { searchEducators } from "@/utils"
+import { rankEducatorSearchResults } from "@/utils"
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
 
 export default function Header({
@@ -39,7 +39,7 @@ export default function Header({
 
   const colleagueMatches = useMemo(() => {
     if (query.trim().length < 2) return []
-    return searchEducators(educators, query, currentUser?.id).slice(0, 6)
+    return rankEducatorSearchResults(educators, query, currentUser?.id).slice(0, 6)
   }, [currentUser?.id, educators, query])
 
   const socialAlerts = unreadCount + followBackSuggestions.length
@@ -122,7 +122,9 @@ export default function Header({
               <p className="px-3.5 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-muted">
                 Colleagues
               </p>
-              {colleagueMatches.map((educator) => (
+              {colleagueMatches.map((educator) => {
+                const isSelf = educator.id === currentUser?.id
+                return (
                 <button
                   type="button"
                   key={educator.id}
@@ -134,11 +136,19 @@ export default function Header({
                 >
                   <Avatar educator={educator} size={32} rounded="rounded-lg" />
                   <span className="min-w-0">
-                    <span className="block truncate text-[13px] font-semibold text-ink">{educator.name}</span>
+                    <span className="flex items-center gap-2 truncate text-[13px] font-semibold text-ink">
+                      {educator.name}
+                      {isSelf ? (
+                        <span className="rounded-full bg-navy-soft px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-navy">
+                          You
+                        </span>
+                      ) : null}
+                    </span>
                     <span className="block truncate text-[12px] text-muted">{educator.school || educator.subject}</span>
                   </span>
                 </button>
-              ))}
+                )
+              })}
               <button
                 type="button"
                 onClick={() => {

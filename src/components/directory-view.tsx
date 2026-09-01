@@ -2,7 +2,7 @@ import EducatorCard from "@/components/educator-card"
 import { institutionLabels, subjectOptions } from "@/data"
 import { useApp } from "@/store"
 import type { InstitutionLevel, Subject } from "@/types"
-import { educatorMatchesQuery } from "@/utils"
+import { educatorMatchesQuery, rankEducatorSearchResults } from "@/utils"
 import { useMemo, useState } from "react"
 
 export default function DirectoryView({
@@ -19,19 +19,19 @@ export default function DirectoryView({
   const [subject, setSubject] = useState<"All" | Subject>("All")
 
   const filtered = useMemo(() => {
-    return educators.filter((educator) => {
-      if (educator.id === currentUser?.id) return false
+    const matches = educators.filter((educator) => {
       if (level !== "All" && educator.institutionLevel !== level) return false
       if (subject !== "All" && educator.subject !== subject) return false
       return educatorMatchesQuery(educator, query)
     })
+    return rankEducatorSearchResults(matches, query, currentUser?.id)
   }, [currentUser?.id, educators, level, query, subject])
 
   return (
     <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-10">
       <h1 className="font-display text-2xl font-bold tracking-[-0.03em] text-ink">Discover colleagues</h1>
       <p className="mt-1 text-sm text-muted">
-        Browse verified high school and university educators. Follow to see their updates in your feed.
+        Search every educator on this device by name or institution, including your own profile.
       </p>
 
       <div className="mt-5 flex flex-wrap gap-1.5">

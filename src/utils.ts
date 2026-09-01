@@ -95,10 +95,18 @@ export function educatorMatchesQuery(educator: Educator, query: string) {
     .some((part) => foldSearchText(part).includes(needle))
 }
 
-export function searchEducators(pool: Educator[], query: string, excludeId?: string) {
-  return pool.filter((educator) => {
-    if (excludeId && educator.id === excludeId) return false
-    return educatorMatchesQuery(educator, query)
+export function searchEducators(pool: Educator[], query: string) {
+  return pool.filter((educator) => educatorMatchesQuery(educator, query))
+}
+
+export function rankEducatorSearchResults(pool: Educator[], query: string, viewerId?: string) {
+  const matches = searchEducators(pool, query)
+  return matches.sort((a, b) => {
+    if (viewerId) {
+      if (a.id === viewerId) return -1
+      if (b.id === viewerId) return 1
+    }
+    return a.name.localeCompare(b.name)
   })
 }
 
