@@ -4,6 +4,7 @@ import {
   getAuth,
   indexedDBLocalPersistence,
   initializeAuth,
+  setPersistence,
   type Auth,
 } from "firebase/auth"
 import { getFirestore, type Firestore } from "firebase/firestore"
@@ -50,10 +51,14 @@ export function getFirebaseAuth() {
       auth = initializeAuth(app, {
         persistence: [indexedDBLocalPersistence, browserLocalPersistence],
       })
+      persistenceReady = Promise.resolve()
     } catch {
-      auth = getAuth(app)
+      const instance = getAuth(app)
+      auth = instance
+      persistenceReady = setPersistence(instance, indexedDBLocalPersistence)
+        .catch(() => setPersistence(instance, browserLocalPersistence))
+        .then(() => undefined)
     }
-    persistenceReady = Promise.resolve()
   }
   return auth
 }
@@ -73,10 +78,23 @@ export function whenAuthReady() {
   return persistenceReady ?? Promise.resolve()
 }
 
-export function firebaseErrorMessage(error: unknown) {
+export const NO_ACCOUNT_MESSAGE =
+  "No account found with this email. Please create an account first."
+
+export function isNoAccountMessage(message: string) {
+  return message === NO_ACCOUNT_MESSAGE
+}
+
+export function firebaseErrorMessage(error: unknown, context?: "login" | "signup") {
   const code = typeof error === "object" && error && "code" in error ? String(error.code) : ""
   if (code === "auth/email-already-in-use") {
     return "An educator with that email already has an account. Sign in instead."
+  }
+  if (
+    context === "login" &&
+    (code === "auth/user-not-found" || code === "auth/invalid-credential" || code === "auth/wrong-password")
+  ) {
+    return NO_ACCOUNT_MESSAGE
   }
   if (code === "auth/invalid-credential" || code === "auth/wrong-password" || code === "auth/user-not-found") {
     return "Email or password is incorrect."
@@ -86,8 +104,11 @@ export function firebaseErrorMessage(error: unknown) {
   if (code === "auth/operation-not-allowed") {
     return "Email/password sign-in is not enabled in this Firebase project yet."
   }
+  if (code === "auth/requires-recent-login") {
+    return "Enter your password again to confirm this account change."
+  }
   if (code === "auth/too-many-requests") {
-    return "Too many sign-in attempts. Please wait a moment and try again."
+    return "Too many attempts. Please wait a moment and try again."
   }
   if (code === "permission-denied") {
     return "Coursify could not read your educator profile. Check Firestore rules and try again."

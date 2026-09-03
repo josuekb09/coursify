@@ -6,6 +6,7 @@ import {
   getFirebaseDb,
   getFirebaseStorage,
   isFirebaseConfigured,
+  whenAuthReady,
 } from "@/firebase"
 import {
   inferInstitutionLevel,
@@ -29,8 +30,11 @@ import type {
 } from "@/types"
 import { conversationIdFor, initialsFromName, isHttpUrl, kindLabel, uid } from "@/utils"
 import {
+  EmailAuthProvider,
   createUserWithEmailAndPassword,
+  deleteUser,
   onAuthStateChanged,
+  reauthenticateWithCredential,
   signInWithEmailAndPassword,
   signOut,
   type User,
@@ -44,15 +48,16 @@ import {
   deleteField,
   doc,
   getDoc,
+  getDocs,
   increment,
   onSnapshot,
   query,
   setDoc,
   updateDoc,
   where,
-  type Unsubscribe,
+  type Query,
 } from "firebase/firestore"
-import { deleteObject, getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage"
+import { deleteObject, getDownloadURL, listAll, ref as storageRef, uploadBytes } from "firebase/storage"
 import {
   createContext,
   useCallback,
@@ -85,14 +90,15 @@ type AppStore = {
   login: (email: string, password: string) => Promise<string | null>
   signup: (input: SignupInput) => Promise<string | null>
   logout: () => void
+  deleteAccount: (password: string) => Promise<string | null>
   updateProfile: (patch: ProfilePatch) => Promise<string | null>
   uploadResource: (input: UploadInput) => Promise<string | null>
   deleteResource: (id: string) => void
   downloadResource: (id: string) => Promise<Resource | undefined>
   hydrateResource: (id: string) => Promise<Resource | undefined>
-  toggleSave: (id: string) => void
+  toggleSave: (id: string) => Promise<void>
   isSaved: (id: string) => boolean
-  toggleFollow: (educatorId: string) => void
+  toggleFollow: (educatorId: string) => Promise<void>
   isFollowing: (educatorId: string) => boolean
   followsYou: (educatorId: string) => boolean
   followBackSuggestions: Educator[]
@@ -105,8 +111,8 @@ type AppStore = {
   messagesFor: (conversationId: string) => ChatMessage[]
   unreadIn: (conversationId: string) => number
   createMeetup: (input: MeetupInput) => Promise<string | null>
-  toggleEventRsvp: (eventId: string) => void
-  deleteMeetup: (eventId: string) => void
+  toggleEventRsvp: (eventId: string) => Promise<void>
+  deleteMeetup: (eventId: string) => Promise<void>
   educatorById: (id: string) => Educator | undefined
   authorName: (authorId: string) => string
   notify: (message: string) => void
@@ -246,7 +252,15 @@ function educatorStub(user: User, extras?: Partial<Educator>): Educator {
   }
 }
 
+function persistablePhoto(photo: string | null | undefined) {
+  if (!photo) return undefined
+  if (/^https?:\/\//i.test(photo)) return photo
+  if (photo.startsWith("data:image/") && photo.length <= 700_000) return photo
+  return undefined
+}
+
 function educatorPayload(profile: Educator) {
+  const photoData = persistablePhoto(profile.photoData)
   return compact({
     email: profile.email,
     name: profile.name,
@@ -258,33 +272,74 @@ function educatorPayload(profile: Educator) {
     storageBytes: profile.storageBytes,
     verified: profile.verified,
     institutionLevel: profile.institutionLevel,
+    photoData,
     createdAt: new Date().toISOString(),
   })
 }
 
-const profileLoads = new Map<string, Promise<Educator>>()
+function profileCacheKey(uid: string) {
+  return `coursify.educator.${uid}`
+}
 
-async function loadOrCreateEducator(user: User, extras?: Partial<Educator>): Promise<Educator> {
+function readCachedProfile(uid: string): Educator | null {
+  try {
+    const raw = localStorage.getItem(profileCacheKey(uid))
+    if (!raw) return null
+    return toEducator(uid, asRecord(JSON.parse(raw)))
+  } catch {
+    return null
+  }
+}
+
+function writeCachedProfile(profile: Educator) {
+  try {
+    localStorage.setItem(profileCacheKey(profile.id), JSON.stringify(profile))
+  } catch {
+    /* quota */
+  }
+}
+
+function clearCachedProfile(uid: string) {
+  try {
+    localStorage.removeItem(profileCacheKey(uid))
+  } catch {
+    /* ignore */
+  }
+}
+
+function mergeEducator(base: Educator | undefined, next: Educator): Educator {
+  if (!base || base.id !== next.id) return next
+  return {
+    ...base,
+    ...next,
+    name: next.name && next.name !== "Educator" ? next.name : base.name,
+    initials: next.initials && next.initials !== "E" ? next.initials : base.initials,
+    school: next.school.trim() ? next.school : base.school,
+    bio: next.bio.trim() ? next.bio : base.bio,
+    photoData: next.photoData || base.photoData,
+    storageBytes: next.storageBytes || base.storageBytes,
+  }
+}
+
+const profileLoads = new Map<string, Promise<Educator | null>>()
+
+async function fetchEducator(user: User): Promise<Educator | null> {
   const pending = profileLoads.get(user.uid)
   if (pending) return pending
 
   const task = (async () => {
     const ref = doc(getFirebaseDb(), "educators", user.uid)
-    try {
-      await user.getIdToken()
-      const snap = await getDoc(ref)
-      if (snap.exists()) return toEducator(snap.id, asRecord(snap.data()))
-    } catch {
-      /* Missing doc or a delayed token — create a default profile. */
+    await withTimeout(user.getIdToken(), 8_000, "Could not verify your session. Please try again.")
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        const snap = await withTimeout(getDoc(ref), 8_000, "Could not load your profile. Please try again.")
+        if (snap.exists()) return toEducator(snap.id, asRecord(snap.data()))
+        return null
+      } catch {
+        await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)))
+      }
     }
-
-    const profile = educatorStub(user, extras)
-    try {
-      await setDoc(ref, educatorPayload(profile), { merge: true })
-    } catch {
-      return profile
-    }
-    return profile
+    return null
   })()
 
   profileLoads.set(user.uid, task)
@@ -296,8 +351,8 @@ async function loadOrCreateEducator(user: User, extras?: Partial<Educator>): Pro
 }
 
 async function fileToDataUrl(fileUrl: string) {
-  const response = await fetch(fileUrl)
-  const blob = await response.blob()
+  const response = await withTimeout(fetch(fileUrl), 10_000, "Could not load that file. Please try again.")
+  const blob = await withTimeout(response.blob(), 10_000, "Could not read that file.")
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(String(reader.result))
@@ -306,12 +361,45 @@ async function fileToDataUrl(fileUrl: string) {
   })
 }
 
-async function uploadDataUrl(path: string, dataUrl: string) {
-  const response = await fetch(dataUrl)
-  const blob = await response.blob()
-  const fileRef = storageRef(getFirebaseStorage(), path)
-  await uploadBytes(fileRef, blob, { contentType: blob.type || "image/jpeg" })
-  return getDownloadURL(fileRef)
+const REQUEST_MS = 12_000
+const REQUEST_TIMEOUT = "That request timed out. Check your connection and try again."
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, message: string) {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(message)), ms)
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        window.clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
+}
+
+function timedWrite<T>(promise: Promise<T>, message = REQUEST_TIMEOUT) {
+  return withTimeout(promise, REQUEST_MS, message)
+}
+
+async function deleteQueryDocs(target: Query) {
+  const snap = await getDocs(target)
+  for (let index = 0; index < snap.docs.length; index += 20) {
+    const chunk = snap.docs.slice(index, index + 20)
+    await Promise.all(chunk.map((item) => deleteDoc(item.ref)))
+  }
+}
+
+async function deleteStorageFolder(path: string) {
+  try {
+    const folder = storageRef(getFirebaseStorage(), path)
+    const listed = await withTimeout(listAll(folder), 2_000, "storage-list-timeout")
+    await Promise.all(listed.items.map((item) => deleteObject(item).catch(() => undefined)))
+  } catch {
+    /* Storage may be unavailable; account deletion still continues. */
+  }
 }
 
 export default function AppProvider({ children }: { children: ReactNode }) {
@@ -346,8 +434,12 @@ export default function AppProvider({ children }: { children: ReactNode }) {
   const signedIn = Boolean(authUser)
 
   function rememberProfile(profile: Educator) {
-    setSessionProfile(profile)
-    setEducators((current) => [...current.filter((item) => item.id !== profile.id), profile])
+    setSessionProfile((current) => mergeEducator(current ?? undefined, profile))
+    setEducators((current) => {
+      const merged = mergeEducator(current.find((item) => item.id === profile.id), profile)
+      writeCachedProfile(merged)
+      return [...current.filter((item) => item.id !== merged.id), merged]
+    })
   }
 
   const followsByUser = useMemo(() => {
@@ -365,33 +457,47 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    const auth = getFirebaseAuth()
-    const db = getFirebaseDb()
-    const unsubAuth = onAuthStateChanged(auth, (user) => {
-      setAuthUser(user)
-      setReady(true)
-      if (!user) {
-        setSessionProfile(null)
-        setLive(false)
-        return
-      }
-      setLive(true)
-      void loadOrCreateEducator(user)
-        .then((profile) => {
-          rememberProfile(profile)
-          setLive(true)
-        })
-        .catch((error) => {
-          rememberProfile(educatorStub(user))
-          setLive(true)
-          notify(firebaseErrorMessage(error))
-        })
-    })
-    const unsubStats = onSnapshot(doc(db, "meta", "stats"), (snap) => {
-      setHasAccounts(Boolean(snap.data()?.hasAccounts) || (snap.data()?.users ?? 0) > 0)
+    let unsubAuth: () => void = () => {}
+    let unsubStats: () => void = () => {}
+    let cancelled = false
+
+    void whenAuthReady().then(() => {
+      if (cancelled) return
+      const auth = getFirebaseAuth()
+      const db = getFirebaseDb()
+      unsubAuth = onAuthStateChanged(auth, (user) => {
+        setAuthUser(user)
+        setReady(true)
+        if (!user) {
+          setSessionProfile(null)
+          setLive(false)
+          return
+        }
+        setLive(true)
+        const cached = readCachedProfile(user.uid)
+        if (cached) rememberProfile(cached)
+        void fetchEducator(user)
+          .then((profile) => {
+            if (profile) {
+              rememberProfile(profile)
+              setLive(true)
+              return
+            }
+            if (!readCachedProfile(user.uid)) rememberProfile(educatorStub(user))
+          })
+          .catch((error) => {
+            if (!readCachedProfile(user.uid)) rememberProfile(educatorStub(user))
+            setLive(true)
+            notify(firebaseErrorMessage(error))
+          })
+      })
+      unsubStats = onSnapshot(doc(db, "meta", "stats"), (snap) => {
+        setHasAccounts(Boolean(snap.data()?.hasAccounts) || (snap.data()?.users ?? 0) > 0)
+      })
     })
 
     return () => {
+      cancelled = true
       unsubAuth()
       unsubStats()
     }
@@ -428,8 +534,10 @@ export default function AppProvider({ children }: { children: ReactNode }) {
         (snap) => {
           const incoming = snap.docs.map((item) => toEducator(item.id, asRecord(item.data())))
           setEducators((current) => {
-            const mine =
-              incoming.find((item) => item.id === uid) ?? current.find((item) => item.id === uid)
+            const mineIncoming = incoming.find((item) => item.id === uid)
+            const mineCurrent = current.find((item) => item.id === uid)
+            const mine = mineIncoming ? mergeEducator(mineCurrent, mineIncoming) : mineCurrent
+            if (mine) writeCachedProfile(mine)
             const rest = incoming.filter((item) => item.id !== uid)
             return mine ? [...rest, mine] : rest
           })
@@ -522,21 +630,32 @@ export default function AppProvider({ children }: { children: ReactNode }) {
     if (!isFirebaseConfigured()) {
       return "Coursify is not connected to Firebase yet. Add the VITE_FIREBASE_ keys and rebuild."
     }
+    const normalized = normalizeEmail(email)
+    if (!normalized || !password) return "Enter your email and password."
     let user: User
     try {
-      const cred = await signInWithEmailAndPassword(getFirebaseAuth(), normalizeEmail(email), password)
+      const cred = await withTimeout(
+        signInWithEmailAndPassword(getFirebaseAuth(), normalized, password),
+        REQUEST_MS,
+        "Sign-in timed out. Check your connection and try again.",
+      )
       user = cred.user
     } catch (error) {
-      return firebaseErrorMessage(error)
+      return firebaseErrorMessage(error, "login")
     }
     setAuthUser(user)
     setReady(true)
     setLive(true)
     try {
-      await user.getIdToken()
-      rememberProfile(await loadOrCreateEducator(user))
+      await withTimeout(user.getIdToken(), 8_000, "Could not verify your session. Please try again.")
+      const cached = readCachedProfile(user.uid)
+      if (cached) rememberProfile(cached)
+      const profile = await fetchEducator(user)
+      if (profile) rememberProfile(profile)
+      else if (!cached) rememberProfile(educatorStub(user))
     } catch (error) {
-      rememberProfile(educatorStub(user))
+      const cached = readCachedProfile(user.uid)
+      rememberProfile(cached ?? educatorStub(user))
       notify(firebaseErrorMessage(error))
     }
     return null
@@ -556,7 +675,11 @@ export default function AppProvider({ children }: { children: ReactNode }) {
     }
     let user: User
     try {
-      const cred = await createUserWithEmailAndPassword(getFirebaseAuth(), email, input.password)
+      const cred = await withTimeout(
+        createUserWithEmailAndPassword(getFirebaseAuth(), email, input.password),
+        REQUEST_MS,
+        "Account creation timed out. Check your connection and try again.",
+      )
       user = cred.user
     } catch (error) {
       return firebaseErrorMessage(error)
@@ -581,9 +704,11 @@ export default function AppProvider({ children }: { children: ReactNode }) {
     setReady(true)
     setLive(true)
     try {
-      await user.getIdToken()
-      await setDoc(doc(getFirebaseDb(), "educators", user.uid), educator)
-      await setDoc(doc(getFirebaseDb(), "meta", "stats"), { hasAccounts: true, users: increment(1) }, { merge: true })
+      await withTimeout(user.getIdToken(), 8_000, "Could not verify your session. Please try again.")
+      await timedWrite(setDoc(doc(getFirebaseDb(), "educators", user.uid), educator))
+      await timedWrite(
+        setDoc(doc(getFirebaseDb(), "meta", "stats"), { hasAccounts: true, users: increment(1) }, { merge: true }),
+      )
     } catch (error) {
       notify(firebaseErrorMessage(error))
     }
@@ -594,56 +719,93 @@ export default function AppProvider({ children }: { children: ReactNode }) {
     void signOut(getFirebaseAuth())
   }, [])
 
+  const deleteAccount = useCallback(async (password: string) => {
+    const auth = getFirebaseAuth()
+    const user = auth.currentUser
+    if (!user?.email) return "Sign in to delete your account."
+    if (!password.trim()) return "Enter your password to confirm account deletion."
+
+    try {
+      await withTimeout(
+        reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password)),
+        8_000,
+        "Could not confirm your password. Check it and try again.",
+      )
+    } catch (error) {
+      return firebaseErrorMessage(error)
+    }
+
+    const active = auth.currentUser
+    if (!active) return "Sign in to delete your account."
+    const uid = active.uid
+    const db = getFirebaseDb()
+
+    clearCachedProfile(uid)
+    setSessionProfile(null)
+    setAuthUser(null)
+
+    void (async () => {
+      await Promise.allSettled([
+        deleteDoc(doc(db, "educators", uid)),
+        deleteUser(active),
+        deleteStorageFolder(`avatars/${uid}`),
+        deleteStorageFolder(`resources/${uid}`),
+        deleteQueryDocs(query(collection(db, "resources"), where("authorId", "==", uid))),
+        deleteQueryDocs(query(collection(db, "posts"), where("authorId", "==", uid))),
+        deleteQueryDocs(query(collection(db, "saves"), where("userId", "==", uid))),
+        deleteQueryDocs(query(collection(db, "follows"), where("followerId", "==", uid))),
+        deleteQueryDocs(query(collection(db, "events"), where("hostId", "==", uid))),
+      ])
+    })()
+
+    return null
+  }, [])
+
   const updateProfile = useCallback(
     async (patch: ProfilePatch) => {
       if (!authUser) return "Sign in to update your profile."
+      const name =
+        sanitizePlainText(patch.name ?? currentUser?.name ?? "", 80) || currentUser?.name || "Educator"
+      const school = sanitizePlainText(patch.school ?? currentUser?.school ?? "", 120)
+      const bio = sanitizePlainText(patch.bio ?? currentUser?.bio ?? "", 800)
+      const subject = patch.subject ?? currentUser?.subject ?? "Mathematics"
+      const institutionLevel = isInstitutionLevel(patch.institutionLevel)
+        ? patch.institutionLevel
+        : (currentUser?.institutionLevel ?? "high-school")
+      const initials = initialsFromName(name)
+      let photoData: string | null | undefined =
+        patch.photoData === undefined ? currentUser?.photoData : patch.photoData
+
+      rememberProfile({
+        ...(currentUser ?? educatorStub(authUser, { name, school, subject, bio, institutionLevel })),
+        name,
+        initials,
+        school,
+        subject,
+        bio,
+        institutionLevel,
+        photoData: typeof photoData === "string" && photoData ? photoData : undefined,
+      })
+
+      const uid = authUser.uid
+      const photo = persistablePhoto(typeof photoData === "string" ? photoData : undefined)
       try {
-        const name =
-          sanitizePlainText(patch.name ?? currentUser?.name ?? "", 80) || currentUser?.name || "Educator"
-        const school = sanitizePlainText(patch.school ?? currentUser?.school ?? "", 120)
-        const bio = sanitizePlainText(patch.bio ?? currentUser?.bio ?? "", 800)
-        const subject = patch.subject ?? currentUser?.subject ?? "Mathematics"
-        const institutionLevel = isInstitutionLevel(patch.institutionLevel)
-          ? patch.institutionLevel
-          : (currentUser?.institutionLevel ?? "high-school")
-        const initials = initialsFromName(name)
-        let photoData: string | null | undefined =
-          patch.photoData === undefined ? currentUser?.photoData : patch.photoData
-
-        const applyLocal = (photo?: string) => {
-          const next = {
-            ...(currentUser ?? educatorStub(authUser, { name, school, subject, bio, institutionLevel })),
-            name,
-            initials,
-            school,
-            subject,
-            bio,
-            institutionLevel,
-            photoData: photo,
-          }
-          setEducators((current) => [...current.filter((item) => item.id !== authUser.uid), next])
-        }
-
-        applyLocal(photoData || undefined)
-
-        if (photoData && photoData.startsWith("data:image/")) {
-          photoData = await uploadDataUrl(`avatars/${authUser.uid}/avatar-${Date.now()}.jpg`, photoData)
-          applyLocal(photoData)
-        }
-
-        await setDoc(
-          doc(getFirebaseDb(), "educators", authUser.uid),
-          {
-            name,
-            initials,
-            school,
-            subject,
-            bio,
-            institutionLevel,
-            updatedAt: new Date().toISOString(),
-            photoData: photoData ? photoData : deleteField(),
-          },
-          { merge: true },
+        await timedWrite(
+          setDoc(
+            doc(getFirebaseDb(), "educators", uid),
+            {
+              name,
+              initials,
+              school,
+              subject,
+              bio,
+              institutionLevel,
+              updatedAt: new Date().toISOString(),
+              photoData: photo ? photo : deleteField(),
+            },
+            { merge: true },
+          ),
+          "Saving your profile timed out. Please try again.",
         )
         notify("Profile updated.")
         return null
@@ -677,8 +839,16 @@ export default function AppProvider({ children }: { children: ReactNode }) {
         if (input.file) {
           storagePath = `resources/${authUser.uid}/${resourceId}/${input.file.name}`
           const fileRef = storageRef(getFirebaseStorage(), storagePath)
-          await uploadBytes(fileRef, input.file)
-          fileUrl = await getDownloadURL(fileRef)
+          await withTimeout(
+            uploadBytes(fileRef, input.file),
+            15_000,
+            "The file upload timed out. Try a smaller file or a link instead.",
+          )
+          fileUrl = await withTimeout(
+            getDownloadURL(fileRef),
+            10_000,
+            "Could not finish saving that file. Please try again.",
+          )
         }
         const resource = compact({
           title,
@@ -699,17 +869,21 @@ export default function AppProvider({ children }: { children: ReactNode }) {
           sourceUrl: sanitizePlainText(input.sourceUrl ?? "", 500) || undefined,
           createdAt: new Date().toISOString().slice(0, 10),
         })
-        await setDoc(doc(getFirebaseDb(), "resources", resourceId), resource)
-        await addDoc(collection(getFirebaseDb(), "posts"), {
-          authorId: authUser.uid,
-          body: `Shared ${title} with the library.`,
-          resourceId,
-          createdAt: new Date().toISOString(),
-        })
+        await timedWrite(setDoc(doc(getFirebaseDb(), "resources", resourceId), resource))
+        await timedWrite(
+          addDoc(collection(getFirebaseDb(), "posts"), {
+            authorId: authUser.uid,
+            body: `Shared ${title} with the library.`,
+            resourceId,
+            createdAt: new Date().toISOString(),
+          }),
+        )
         if (size) {
-          await updateDoc(doc(getFirebaseDb(), "educators", authUser.uid), {
-            storageBytes: increment(size),
-          })
+          await timedWrite(
+            updateDoc(doc(getFirebaseDb(), "educators", authUser.uid), {
+              storageBytes: increment(size),
+            }),
+          )
         }
         notify(`${title} was added to your library.`)
         return null
@@ -769,7 +943,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       const resource = await hydrateResource(id)
       if (!resource) return undefined
       try {
-        await updateDoc(doc(getFirebaseDb(), "resources", id), { downloads: increment(1) })
+        await timedWrite(updateDoc(doc(getFirebaseDb(), "resources", id), { downloads: increment(1) }))
       } catch {
         /* still allow the download */
       }
@@ -779,46 +953,44 @@ export default function AppProvider({ children }: { children: ReactNode }) {
   )
 
   const toggleSave = useCallback(
-    (id: string) => {
+    async (id: string) => {
       if (!authUser) return
       const saveId = `${authUser.uid}_${id}`
       const saved = savedIds.includes(id)
-      void (async () => {
-        try {
-          if (saved) await deleteDoc(doc(getFirebaseDb(), "saves", saveId))
-          else await setDoc(doc(getFirebaseDb(), "saves", saveId), { userId: authUser.uid, resourceId: id })
-          await updateDoc(doc(getFirebaseDb(), "resources", id), { saves: increment(saved ? -1 : 1) })
-        } catch (error) {
-          notify(firebaseErrorMessage(error))
-        }
-      })()
+      try {
+        if (saved) await timedWrite(deleteDoc(doc(getFirebaseDb(), "saves", saveId)))
+        else await timedWrite(setDoc(doc(getFirebaseDb(), "saves", saveId), { userId: authUser.uid, resourceId: id }))
+        await timedWrite(updateDoc(doc(getFirebaseDb(), "resources", id), { saves: increment(saved ? -1 : 1) }))
+      } catch (error) {
+        throw new Error(firebaseErrorMessage(error))
+      }
     },
-    [authUser, notify, savedIds],
+    [authUser, savedIds],
   )
 
   const isSaved = useCallback((id: string) => savedIds.includes(id), [savedIds])
 
   const toggleFollow = useCallback(
-    (educatorId: string) => {
+    async (educatorId: string) => {
       if (!authUser || educatorId === authUser.uid) return
       const followId = `${authUser.uid}_${educatorId}`
       const following = (followsByUser[authUser.uid] ?? []).includes(educatorId)
-      void (async () => {
-        try {
-          if (following) await deleteDoc(doc(getFirebaseDb(), "follows", followId))
-          else {
-            await setDoc(doc(getFirebaseDb(), "follows", followId), {
+      try {
+        if (following) await timedWrite(deleteDoc(doc(getFirebaseDb(), "follows", followId)))
+        else {
+          await timedWrite(
+            setDoc(doc(getFirebaseDb(), "follows", followId), {
               followerId: authUser.uid,
               followeeId: educatorId,
               createdAt: new Date().toISOString(),
-            })
-          }
-        } catch (error) {
-          notify(firebaseErrorMessage(error))
+            }),
+          )
         }
-      })()
+      } catch (error) {
+        throw new Error(firebaseErrorMessage(error))
+      }
     },
-    [authUser, followsByUser, notify],
+    [authUser, followsByUser],
   )
 
   const isFollowing = useCallback(
@@ -862,12 +1034,17 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       const text = sanitizePlainText(body, 800)
       if (!text && !resourceId) return "Write a short update before posting."
       try {
-        await addDoc(collection(getFirebaseDb(), "posts"), compact({
-          authorId: authUser.uid,
-          body: text || "Shared a resource with colleagues.",
-          resourceId,
-          createdAt: new Date().toISOString(),
-        }))
+        await timedWrite(
+          addDoc(
+            collection(getFirebaseDb(), "posts"),
+            compact({
+              authorId: authUser.uid,
+              body: text || "Shared a resource with colleagues.",
+              resourceId,
+              createdAt: new Date().toISOString(),
+            }),
+          ),
+        )
         notify("Posted to the academic feed.")
         return null
       } catch (error) {
@@ -887,25 +1064,31 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       const conversationId = conversationIdFor(authUser.uid, peerId)
       const participantIds = [authUser.uid, peerId].sort()
       try {
-        await setDoc(
-          doc(getFirebaseDb(), "conversations", conversationId),
-          {
-            participantIds,
-            updatedAt: now,
-            lastMessage: text,
-          },
-          { merge: true },
+        await timedWrite(
+          setDoc(
+            doc(getFirebaseDb(), "conversations", conversationId),
+            {
+              participantIds,
+              updatedAt: now,
+              lastMessage: text,
+            },
+            { merge: true },
+          ),
         )
-        await updateDoc(doc(getFirebaseDb(), "conversations", conversationId), {
-          [`lastReadAt.${authUser.uid}`]: now,
-        })
-        await addDoc(collection(getFirebaseDb(), "messages"), {
-          conversationId,
-          senderId: authUser.uid,
-          body: text,
-          createdAt: now,
-          participantIds,
-        })
+        await timedWrite(
+          updateDoc(doc(getFirebaseDb(), "conversations", conversationId), {
+            [`lastReadAt.${authUser.uid}`]: now,
+          }),
+        )
+        await timedWrite(
+          addDoc(collection(getFirebaseDb(), "messages"), {
+            conversationId,
+            senderId: authUser.uid,
+            body: text,
+            createdAt: now,
+            participantIds,
+          }),
+        )
         return null
       } catch (error) {
         return firebaseErrorMessage(error)
@@ -1006,19 +1189,21 @@ export default function AppProvider({ children }: { children: ReactNode }) {
         const eventId = uid("evt")
         const location = input.format === "in-person" ? sanitizePlainText(input.location ?? "", 240) : ""
         const meetingUrl = input.format === "online" ? sanitizePlainText(input.meetingUrl ?? "", 500) : ""
-        await setDoc(
-          doc(getFirebaseDb(), "events", eventId),
-          compact({
-            title,
-            description,
-            hostId: authUser.uid,
-            format: input.format,
-            startsAt: startsAt.toISOString(),
-            location: location || undefined,
-            meetingUrl: meetingUrl || undefined,
-            rsvpIds: [authUser.uid],
-            createdAt: new Date().toISOString(),
-          }),
+        await timedWrite(
+          setDoc(
+            doc(getFirebaseDb(), "events", eventId),
+            compact({
+              title,
+              description,
+              hostId: authUser.uid,
+              format: input.format,
+              startsAt: startsAt.toISOString(),
+              location: location || undefined,
+              meetingUrl: meetingUrl || undefined,
+              rsvpIds: [authUser.uid],
+              createdAt: new Date().toISOString(),
+            }),
+          ),
         )
         notify(`${title} is now on the Meetups board.`)
         return null
@@ -1030,26 +1215,35 @@ export default function AppProvider({ children }: { children: ReactNode }) {
   )
 
   const toggleEventRsvp = useCallback(
-    (eventId: string) => {
+    async (eventId: string) => {
       if (!authUser) return
       const meetup = events.find((item) => item.id === eventId)
       if (!meetup) return
       const going = meetup.rsvpIds.includes(authUser.uid)
-      void updateDoc(doc(getFirebaseDb(), "events", eventId), {
-        rsvpIds: going ? arrayRemove(authUser.uid) : arrayUnion(authUser.uid),
-      }).catch((error) => notify(firebaseErrorMessage(error)))
+      try {
+        await timedWrite(
+          updateDoc(doc(getFirebaseDb(), "events", eventId), {
+            rsvpIds: going ? arrayRemove(authUser.uid) : arrayUnion(authUser.uid),
+          }),
+        )
+      } catch (error) {
+        throw new Error(firebaseErrorMessage(error))
+      }
     },
-    [authUser, events, notify],
+    [authUser, events],
   )
 
   const deleteMeetup = useCallback(
-    (eventId: string) => {
+    async (eventId: string) => {
       if (!authUser) return
       const meetup = events.find((item) => item.id === eventId)
       if (!meetup || meetup.hostId !== authUser.uid) return
-      void deleteDoc(doc(getFirebaseDb(), "events", eventId)).catch((error) =>
-        notify(firebaseErrorMessage(error)),
-      )
+      try {
+        await timedWrite(deleteDoc(doc(getFirebaseDb(), "events", eventId)))
+        notify("Meetup cancelled.")
+      } catch (error) {
+        throw new Error(firebaseErrorMessage(error))
+      }
     },
     [authUser, events, notify],
   )
@@ -1085,6 +1279,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       login,
       signup,
       logout,
+      deleteAccount,
       updateProfile,
       uploadResource,
       deleteResource,
@@ -1117,6 +1312,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       conversations,
       createMeetup,
       currentUser,
+      deleteAccount,
       deleteMeetup,
       deleteResource,
       downloadResource,

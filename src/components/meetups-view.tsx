@@ -15,7 +15,7 @@ export default function MeetupsView({
   query: string
   onAuthor: (id: string) => void
 }) {
-  const { currentUser, events, educatorById, authorName, toggleEventRsvp, deleteMeetup } = useApp()
+  const { currentUser, events, authorName } = useApp()
   const [filter, setFilter] = useState<EventFilter>("upcoming")
   const [creating, setCreating] = useState(false)
 
@@ -85,8 +85,6 @@ export default function MeetupsView({
             key={event.id}
             event={event}
             onAuthor={onAuthor}
-            onRsvp={() => toggleEventRsvp(event.id)}
-            onCancel={() => deleteMeetup(event.id)}
           />
         ))}
       </div>
@@ -107,19 +105,41 @@ export default function MeetupsView({
 function MeetupCard({
   event,
   onAuthor,
-  onRsvp,
-  onCancel,
 }: {
   event: Meetup
   onAuthor: (id: string) => void
-  onRsvp: () => void
-  onCancel: () => void
 }) {
-  const { currentUser, educatorById, authorName } = useApp()
+  const { currentUser, educatorById, authorName, toggleEventRsvp, deleteMeetup, notify } = useApp()
+  const [busy, setBusy] = useState(false)
   const host = educatorById(event.hostId)
   const going = Boolean(currentUser && event.rsvpIds.includes(currentUser.id))
   const isHost = currentUser?.id === event.hostId
   const online = event.format === "online"
+
+  async function handleRsvp() {
+    if (busy) return
+    setBusy(true)
+    try {
+      await toggleEventRsvp(event.id)
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Could not update your RSVP.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleCancel() {
+    if (busy) return
+    if (!window.confirm(`Cancel “${event.title}”? Colleagues will no longer see this meetup.`)) return
+    setBusy(true)
+    try {
+      await deleteMeetup(event.id)
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Could not cancel this meetup.")
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <article className="flex flex-col overflow-hidden rounded-xl border border-line bg-surface">
@@ -177,14 +197,15 @@ function MeetupCard({
       <div className="flex flex-wrap gap-2 border-t border-line px-5 py-3">
         <button
           type="button"
-          onClick={onRsvp}
-          className={`min-h-10 rounded-lg px-3.5 py-2 text-[13px] font-semibold ${
+          disabled={busy}
+          onClick={() => void handleRsvp()}
+          className={`min-h-10 rounded-lg px-3.5 py-2 text-[13px] font-semibold disabled:opacity-60 ${
             going
               ? "border border-line text-ink hover:border-line-strong"
               : "bg-navy text-white hover:bg-navy-hover"
           }`}
         >
-          {going ? "Going" : "RSVP"}
+          {busy ? "Updating…" : going ? "Going" : "RSVP"}
         </button>
         {online && going && event.meetingUrl ? (
           <a
@@ -199,8 +220,9 @@ function MeetupCard({
         {isHost ? (
           <button
             type="button"
-            onClick={onCancel}
-            className="ml-auto min-h-10 rounded-lg px-3.5 py-2 text-[13px] font-medium text-muted hover:text-ink"
+            disabled={busy}
+            onClick={() => void handleCancel()}
+            className="ml-auto min-h-10 rounded-lg px-3.5 py-2 text-[13px] font-medium text-muted hover:text-ink disabled:opacity-50"
           >
             Cancel event
           </button>

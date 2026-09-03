@@ -16,7 +16,7 @@ function defaultStartsAt() {
 }
 
 export default function MeetupModal({ onClose }: { onClose: () => void }) {
-  const { createMeetup } = useApp()
+  const { createMeetup, notify } = useApp()
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [form, setForm] = useState<MeetupInput>({
@@ -39,15 +39,24 @@ export default function MeetupModal({ onClose }: { onClose: () => void }) {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
+    if (busy) return
     setBusy(true)
     setError(null)
-    const result = await createMeetup(form)
-    setBusy(false)
-    if (result) {
-      setError(result)
-      return
+    try {
+      const result = await createMeetup(form)
+      if (result) {
+        setError(result)
+        notify(result)
+        return
+      }
+      onClose()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not publish this meetup. Please try again."
+      setError(message)
+      notify(message)
+    } finally {
+      setBusy(false)
     }
-    onClose()
   }
 
   return (
@@ -56,6 +65,7 @@ export default function MeetupModal({ onClose }: { onClose: () => void }) {
         type="button"
         className="absolute inset-0 bg-navy/40"
         aria-label="Close meetup form"
+        disabled={busy}
         onClick={onClose}
       />
       <form
@@ -193,7 +203,8 @@ export default function MeetupModal({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-line px-3.5 py-2 text-sm font-medium text-ink"
+            disabled={busy}
+            className="rounded-lg border border-line px-3.5 py-2 text-sm font-medium text-ink disabled:opacity-50"
           >
             Cancel
           </button>

@@ -1,4 +1,5 @@
 import Logo, { CoursifyMark } from "@/components/logo"
+import { isNoAccountMessage } from "@/firebase"
 import { useApp } from "@/store"
 import type { AuthMode, InstitutionLevel, SignupInput } from "@/types"
 import { useState, type FormEvent } from "react"
@@ -28,34 +29,38 @@ export default function AuthScreen({
 
   async function handleLogin(event: FormEvent) {
     event.preventDefault()
+    if (busy) return
     setBusy(true)
     setError(null)
     try {
       const result = await login(loginForm.email, loginForm.password)
-      if (result) {
-        setError(result)
-        setBusy(false)
-      }
-    } catch {
-      setError("Something went wrong. Please try again.")
+      if (result) setError(result)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Something went wrong. Please try again.")
+    } finally {
       setBusy(false)
     }
   }
 
   async function handleSignup(event: FormEvent) {
     event.preventDefault()
+    if (busy) return
     setBusy(true)
     setError(null)
     try {
       const result = await signup(signupForm)
-      if (result) {
-        setError(result)
-        setBusy(false)
-      }
-    } catch {
-      setError("Something went wrong. Please try again.")
+      if (result) setError(result)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Something went wrong. Please try again.")
+    } finally {
       setBusy(false)
     }
+  }
+
+  function goToSignup(email?: string) {
+    setError(null)
+    if (email) setSignupForm((current) => ({ ...current, email }))
+    onMode("signup")
   }
 
   return (
@@ -134,7 +139,20 @@ export default function AuthScreen({
                     autoComplete="current-password"
                   />
                 </label>
-                {error ? <p className="text-sm text-[#8a3b32]">{error}</p> : null}
+                {error ? (
+                  <div className="rounded-lg border border-[#ead7d4] bg-[#fbf6f5] px-3.5 py-3">
+                    <p className="text-sm text-[#8a3b32]">{error}</p>
+                    {isNoAccountMessage(error) ? (
+                      <button
+                        type="button"
+                        onClick={() => goToSignup(loginForm.email)}
+                        className="mt-2 text-sm font-semibold text-navy hover:text-navy-hover"
+                      >
+                        Create Educator Account
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
                 <button
                   type="submit"
                   disabled={busy}
@@ -147,10 +165,7 @@ export default function AuthScreen({
                 New to Coursify?{" "}
                 <button
                   type="button"
-                  onClick={() => {
-                    setError(null)
-                    onMode("signup")
-                  }}
+                  onClick={() => goToSignup(loginForm.email)}
                   className="font-semibold text-navy hover:text-navy-hover"
                 >
                   Create Educator Account

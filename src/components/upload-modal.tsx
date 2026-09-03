@@ -22,7 +22,7 @@ const kinds: { id: ResourceKind; label: string }[] = [
 ]
 
 export default function UploadModal({ onClose }: { onClose: () => void }) {
-  const { uploadResource } = useApp()
+  const { uploadResource, notify } = useApp()
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [form, setForm] = useState<UploadInput>({
@@ -44,14 +44,24 @@ export default function UploadModal({ onClose }: { onClose: () => void }) {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
+    if (busy) return
     setBusy(true)
-    const result = await uploadResource(form)
-    setBusy(false)
-    if (result) {
-      setError(result)
-      return
+    setError(null)
+    try {
+      const result = await uploadResource(form)
+      if (result) {
+        setError(result)
+        notify(result)
+        return
+      }
+      onClose()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not save this resource. Please try again."
+      setError(message)
+      notify(message)
+    } finally {
+      setBusy(false)
     }
-    onClose()
   }
 
   return (
@@ -60,6 +70,7 @@ export default function UploadModal({ onClose }: { onClose: () => void }) {
         type="button"
         className="absolute inset-0 bg-navy/40"
         aria-label="Close upload"
+        disabled={busy}
         onClick={onClose}
       />
       <form
@@ -75,6 +86,7 @@ export default function UploadModal({ onClose }: { onClose: () => void }) {
             type="button"
             className="grid h-9 w-9 place-items-center rounded-lg text-ink"
             aria-label="Close"
+            disabled={busy}
             onClick={onClose}
           >
             <Icons.Close className="h-4 w-4" />
@@ -214,7 +226,8 @@ export default function UploadModal({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-line px-3.5 py-2 text-sm font-medium text-ink hover:border-line-strong"
+            disabled={busy}
+            className="rounded-lg border border-line px-3.5 py-2 text-sm font-medium text-ink hover:border-line-strong disabled:opacity-50"
           >
             Cancel
           </button>

@@ -39,9 +39,10 @@ export default function Profile({
   const [tab, setTab] = useState<ProfileTab>("Resources")
   const [cvOpen, setCvOpen] = useState(false)
   const [editing, setEditing] = useState(startEditing)
+  const [followBusy, setFollowBusy] = useState(false)
 
   useEffect(() => {
-    if (startEditing) setEditing(true)
+    setEditing(startEditing)
   }, [startEditing])
 
   function setProfileEditing(next: boolean) {
@@ -162,17 +163,28 @@ export default function Profile({
               <div className="flex w-full shrink-0 flex-col gap-2.5 sm:w-auto sm:flex-row">
                 <button
                   type="button"
+                  disabled={followBusy}
                   onClick={() => {
-                    toggleFollow(educator.id)
-                    notify(following ? `Unfollowed ${educator.name}` : `Following ${educator.name}`)
+                    if (followBusy) return
+                    setFollowBusy(true)
+                    void (async () => {
+                      try {
+                        await toggleFollow(educator.id)
+                        notify(following ? `Unfollowed ${educator.name}` : `Following ${educator.name}`)
+                      } catch (error) {
+                        notify(error instanceof Error ? error.message : "Could not update follow. Please try again.")
+                      } finally {
+                        setFollowBusy(false)
+                      }
+                    })()
                   }}
-                  className={`min-h-11 rounded-lg px-4 py-2.5 text-sm font-semibold ${
+                  className={`min-h-11 rounded-lg px-4 py-2.5 text-sm font-semibold disabled:opacity-60 ${
                     following
                       ? "border border-line text-ink hover:border-line-strong"
                       : "bg-navy text-white hover:bg-navy-hover"
                   }`}
                 >
-                  {followLabel}
+                  {followBusy ? "Updating…" : followLabel}
                 </button>
                 <button
                   type="button"

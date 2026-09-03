@@ -34,6 +34,7 @@ export default function ResourcePreview({
   const { currentUser, downloadResource, hydrateResource, toggleSave, isSaved, authorName, educatorById, notify } =
     useApp()
   const [full, setFull] = useState(resource)
+  const [busy, setBusy] = useState(false)
   const saved = isSaved(resource.id)
   const authorEducator = educatorById(resource.authorId)
   const author = authorEducator?.name ?? authorName(resource.authorId)
@@ -55,10 +56,18 @@ export default function ResourcePreview({
   }, [onClose])
 
   async function handleDownload() {
-    const next = await downloadResource(resource.id)
-    const current = next ?? full
-    const action = deliverResource(current, author)
-    notify(action === "open" ? `Opening ${current.title}` : `Downloading ${current.title}`)
+    if (busy) return
+    setBusy(true)
+    try {
+      const next = await downloadResource(resource.id)
+      const current = next ?? full
+      const action = deliverResource(current, author)
+      notify(action === "open" ? `Opening ${current.title}` : `Downloading ${current.title}`)
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Could not download that resource. Please try again.")
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -122,11 +131,22 @@ export default function ResourcePreview({
             {currentUser ? (
               <button
                 type="button"
+                disabled={busy}
                 onClick={() => {
-                  toggleSave(resource.id)
+              if (busy) return
+              setBusy(true)
+              void (async () => {
+                try {
+                  await toggleSave(resource.id)
                   notify(saved ? "Removed from Saved" : "Saved to your library")
-                }}
-                className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line px-3.5 py-2 text-[13px] font-medium text-ink hover:border-line-strong"
+                } catch (error) {
+                  notify(error instanceof Error ? error.message : "Could not update Saved. Please try again.")
+                } finally {
+                  setBusy(false)
+                }
+              })()
+            }}
+                className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line px-3.5 py-2 text-[13px] font-medium text-ink hover:border-line-strong disabled:opacity-60"
               >
                 <Icons.Bookmark className="h-4 w-4 text-navy" filled={saved} />
                 {saved ? "Saved" : "Save"}
@@ -134,11 +154,12 @@ export default function ResourcePreview({
             ) : null}
             <button
               type="button"
-              onClick={handleDownload}
-              className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-navy px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-navy-hover"
+              disabled={busy}
+              onClick={() => void handleDownload()}
+              className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-navy px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-navy-hover disabled:opacity-60"
             >
               {isLink ? <Icons.Link className="h-4 w-4" /> : <Icons.Download className="h-4 w-4" />}
-              {isLink ? "Open original" : "Download"}
+              {busy ? "Working…" : isLink ? "Open original" : "Download"}
             </button>
           </div>
         </footer>

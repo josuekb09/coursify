@@ -15,11 +15,12 @@ export default function Avatar({
   if (educator.photoData) {
     return (
       <img
+        key={educator.photoData.slice(0, 80)}
         src={educator.photoData}
         alt=""
         width={size}
         height={size}
-        className={`${rounded} object-cover ${className}`}
+        className={`${rounded} bg-navy-soft object-cover ${className}`}
         style={{ width: dim, height: dim }}
       />
     )

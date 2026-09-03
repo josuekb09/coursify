@@ -13,7 +13,7 @@ service cloud.firestore {
     match /educators/{userId} {
       allow read: if signedIn();
       allow create, update: if signedIn() && request.auth.uid == userId;
-      allow delete: if false;
+      allow delete: if signedIn() && request.auth.uid == userId;
     }
 
     match /resources/{resourceId} {
@@ -35,7 +35,10 @@ service cloud.firestore {
     match /follows/{followId} {
       allow read: if signedIn();
       allow create: if signedIn() && request.resource.data.followerId == request.auth.uid;
-      allow delete: if signedIn() && resource.data.followerId == request.auth.uid;
+      allow delete: if signedIn() && (
+        resource.data.followerId == request.auth.uid ||
+        resource.data.followeeId == request.auth.uid
+      );
     }
 
     match /saves/{saveId} {
@@ -50,6 +53,7 @@ service cloud.firestore {
       allow update: if signedIn()
         && request.auth.uid in resource.data.participantIds
         && request.resource.data.participantIds == resource.data.participantIds;
+      allow delete: if signedIn() && request.auth.uid in resource.data.participantIds;
     }
 
     match /messages/{messageId} {
@@ -57,6 +61,10 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.senderId == request.auth.uid
         && request.auth.uid in request.resource.data.participantIds;
+      allow delete: if signedIn() && (
+        resource.data.senderId == request.auth.uid ||
+        request.auth.uid in resource.data.participantIds
+      );
     }
 
     match /events/{eventId} {

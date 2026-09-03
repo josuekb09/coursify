@@ -22,6 +22,8 @@ export default function ResourceCard({
   const { currentUser, downloadResource, deleteResource, toggleSave, isSaved, authorName, educatorById, notify } =
     useApp()
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const saved = isSaved(resource.id)
   const authorEducator = educatorById(resource.authorId)
   const author = authorEducator?.name ?? authorName(resource.authorId)
@@ -31,10 +33,31 @@ export default function ResourceCard({
   const isSlides = format === "slides"
 
   async function handleDownload() {
-    const next = await downloadResource(resource.id)
-    const current = next ?? resource
-    const action = deliverResource(current, author)
-    notify(action === "open" ? `Opening ${current.title}` : `Downloading ${current.title}`)
+    if (downloading) return
+    setDownloading(true)
+    try {
+      const next = await downloadResource(resource.id)
+      const current = next ?? resource
+      const action = deliverResource(current, author)
+      notify(action === "open" ? `Opening ${current.title}` : `Downloading ${current.title}`)
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Could not download that resource. Please try again.")
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  async function handleSave() {
+    if (saving) return
+    setSaving(true)
+    try {
+      await toggleSave(resource.id)
+      notify(saved ? "Removed from Saved" : "Saved to your library")
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Could not update Saved. Please try again.")
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -124,11 +147,9 @@ export default function ResourceCard({
             <button
               type="button"
               aria-label={saved ? "Unsave resource" : "Save resource"}
-              onClick={() => {
-                toggleSave(resource.id)
-                notify(saved ? "Removed from Saved" : "Saved to your library")
-              }}
-              className="grid h-10 w-10 place-items-center rounded-lg border border-line text-navy hover:border-line-strong"
+              disabled={saving}
+              onClick={() => void handleSave()}
+              className="grid h-10 w-10 place-items-center rounded-lg border border-line text-navy hover:border-line-strong disabled:opacity-60"
             >
               <Icons.Bookmark className="h-4 w-4" filled={saved} />
             </button>
@@ -148,11 +169,12 @@ export default function ResourceCard({
             ) : null}
             <button
               type="button"
-              onClick={handleDownload}
-              className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-navy px-3.5 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-navy-hover"
+              disabled={downloading}
+              onClick={() => void handleDownload()}
+              className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-navy px-3.5 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-navy-hover disabled:opacity-60"
             >
               {isLink ? <Icons.Link className="h-4 w-4" /> : <Icons.Download className="h-4 w-4" />}
-              {isLink ? "Open" : "Download"}
+              {downloading ? "Working…" : isLink ? "Open" : "Download"}
             </button>
           </div>
         </div>

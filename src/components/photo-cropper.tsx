@@ -1,7 +1,7 @@
 import Icons from "@/components/icons"
 import { useEffect, useRef, useState } from "react"
 
-const SIZE = 256
+const SIZE = 192
 
 function exportCrop(image: HTMLImageElement, zoom: number, panX: number, panY: number) {
   const canvas = document.createElement("canvas")
@@ -17,7 +17,7 @@ function exportCrop(image: HTMLImageElement, zoom: number, panX: number, panY: n
   ctx.fillStyle = "#eef1f7"
   ctx.fillRect(0, 0, SIZE, SIZE)
   ctx.drawImage(image, x, y, drawW, drawH)
-  return canvas.toDataURL("image/jpeg", 0.86)
+  return canvas.toDataURL("image/jpeg", 0.72)
 }
 
 export default function PhotoCropper({

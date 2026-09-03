@@ -4,6 +4,7 @@ import { institutionLabels } from "@/data"
 import { useApp } from "@/store"
 import type { Educator } from "@/types"
 import { followButtonLabel } from "@/utils"
+import { useState } from "react"
 
 export default function EducatorCard({
   educator,
@@ -15,6 +16,7 @@ export default function EducatorCard({
   onMessage: (id: string) => void
 }) {
   const { currentUser, toggleFollow, isFollowing, followsYou, followerCount, notify } = useApp()
+  const [followBusy, setFollowBusy] = useState(false)
   const following = isFollowing(educator.id)
   const theyFollowYou = followsYou(educator.id)
   const isSelf = currentUser?.id === educator.id
@@ -40,11 +42,22 @@ export default function EducatorCard({
         <div className="mt-4 flex gap-2">
           <button
             type="button"
+            disabled={followBusy}
             onClick={() => {
-              toggleFollow(educator.id)
-              notify(following ? `Unfollowed ${educator.name}` : `Following ${educator.name}`)
+              if (followBusy) return
+              setFollowBusy(true)
+              void (async () => {
+                try {
+                  await toggleFollow(educator.id)
+                  notify(following ? `Unfollowed ${educator.name}` : `Following ${educator.name}`)
+                } catch (error) {
+                  notify(error instanceof Error ? error.message : "Could not update follow. Please try again.")
+                } finally {
+                  setFollowBusy(false)
+                }
+              })()
             }}
-            className={`flex-1 rounded-lg px-3 py-2 text-[13px] font-semibold ${
+            className={`flex-1 rounded-lg px-3 py-2 text-[13px] font-semibold disabled:opacity-60 ${
               following
                 ? "border border-line text-ink hover:border-line-strong"
                 : theyFollowYou
@@ -52,7 +65,7 @@ export default function EducatorCard({
                   : "bg-navy text-white hover:bg-navy-hover"
             }`}
           >
-            {followLabel}
+            {followBusy ? "Updating…" : followLabel}
           </button>
           <button
             type="button"

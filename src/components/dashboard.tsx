@@ -36,6 +36,8 @@ export default function Dashboard({
   const [body, setBody] = useState("")
   const [resourceId, setResourceId] = useState("")
   const [error, setError] = useState<string | null>(null)
+  const [posting, setPosting] = useState(false)
+  const [followBusyId, setFollowBusyId] = useState<string | null>(null)
 
   const needle = query.trim().toLowerCase()
   const posts = useMemo(
@@ -61,14 +63,22 @@ export default function Dashboard({
 
   async function handlePost(event: FormEvent) {
     event.preventDefault()
-    const result = await publishPost(body, resourceId || undefined)
-    if (result) {
-      setError(result)
-      return
-    }
-    setBody("")
-    setResourceId("")
+    if (posting) return
+    setPosting(true)
     setError(null)
+    try {
+      const result = await publishPost(body, resourceId || undefined)
+      if (result) {
+        setError(result)
+        return
+      }
+      setBody("")
+      setResourceId("")
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not publish that update. Please try again.")
+    } finally {
+      setPosting(false)
+    }
   }
 
   const stats = [
@@ -177,13 +187,24 @@ export default function Dashboard({
                   </button>
                   <button
                     type="button"
+                    disabled={followBusyId === educator.id}
                     onClick={() => {
-                      toggleFollow(educator.id)
-                      notify(`Following ${educator.name}`)
+                      if (followBusyId) return
+                      setFollowBusyId(educator.id)
+                      void (async () => {
+                        try {
+                          await toggleFollow(educator.id)
+                          notify(`Following ${educator.name}`)
+                        } catch (error) {
+                          notify(error instanceof Error ? error.message : "Could not update follow. Please try again.")
+                        } finally {
+                          setFollowBusyId(null)
+                        }
+                      })()
                     }}
-                    className="shrink-0 rounded-lg bg-navy px-3 py-2 text-[12px] font-semibold text-white hover:bg-navy-hover"
+                    className="shrink-0 rounded-lg bg-navy px-3 py-2 text-[12px] font-semibold text-white hover:bg-navy-hover disabled:opacity-60"
                   >
-                    {followButtonLabel(following, theyFollowYou)}
+                    {followBusyId === educator.id ? "Updating…" : followButtonLabel(following, theyFollowYou)}
                   </button>
                 </article>
               )
@@ -219,7 +240,8 @@ export default function Dashboard({
                 value={body}
                 onChange={(event) => setBody(event.target.value)}
                 rows={3}
-                className="w-full rounded-lg border border-line bg-canvas px-3 py-2.5 text-sm text-ink outline-none focus:border-navy"
+                disabled={posting}
+                className="w-full rounded-lg border border-line bg-canvas px-3 py-2.5 text-sm text-ink outline-none focus:border-navy disabled:opacity-60"
                 placeholder="A note on a lesson, a question for colleagues, or a resource you just published."
               />
             </label>
@@ -238,10 +260,11 @@ export default function Dashboard({
               </select>
               <button
                 type="submit"
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-navy px-3.5 py-2 text-sm font-semibold text-white hover:bg-navy-hover sm:w-auto"
+                disabled={posting}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-navy px-3.5 py-2 text-sm font-semibold text-white hover:bg-navy-hover disabled:opacity-60 sm:w-auto"
               >
                 <Icons.Send className="h-4 w-4" />
-                Post
+                {posting ? "Posting…" : "Post"}
               </button>
             </div>
             {error ? <p className="mt-2 text-sm text-[#8a3b32]">{error}</p> : null}

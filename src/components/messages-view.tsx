@@ -27,6 +27,7 @@ export default function MessagesView({
   const [activePeer, setActivePeer] = useState<string | null>(peerId)
   const [draft, setDraft] = useState("")
   const [error, setError] = useState<string | null>(null)
+  const [sending, setSending] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -57,14 +58,21 @@ export default function MessagesView({
 
   async function handleSend(event: FormEvent) {
     event.preventDefault()
-    if (!activePeer) return
-    const result = await sendMessage(activePeer, draft)
-    if (result) {
-      setError(result)
-      return
-    }
-    setDraft("")
+    if (!activePeer || sending) return
+    setSending(true)
     setError(null)
+    try {
+      const result = await sendMessage(activePeer, draft)
+      if (result) {
+        setError(result)
+        return
+      }
+      setDraft("")
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not send that message. Please try again.")
+    } finally {
+      setSending(false)
+    }
   }
 
   const others = useMemo(() => {
@@ -203,15 +211,17 @@ export default function MessagesView({
                   <input
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
-                    className="h-11 min-w-0 flex-1 rounded-lg border border-line bg-canvas px-3 text-sm text-ink outline-none focus:border-navy"
+                    disabled={sending}
+                    className="h-11 min-w-0 flex-1 rounded-lg border border-line bg-canvas px-3 text-sm text-ink outline-none focus:border-navy disabled:opacity-60"
                     placeholder={`Message ${peer.name}`}
                   />
                   <button
                     type="submit"
-                    className="inline-flex h-11 shrink-0 items-center gap-2 rounded-lg bg-navy px-3.5 text-sm font-semibold text-white hover:bg-navy-hover"
+                    disabled={sending || !draft.trim()}
+                    className="inline-flex h-11 shrink-0 items-center gap-2 rounded-lg bg-navy px-3.5 text-sm font-semibold text-white hover:bg-navy-hover disabled:opacity-60"
                   >
                     <Icons.Send className="h-4 w-4" />
-                    Send
+                    {sending ? "Sending…" : "Send"}
                   </button>
                 </div>
                 {error ? <p className="mt-2 text-sm text-[#8a3b32]">{error}</p> : null}
