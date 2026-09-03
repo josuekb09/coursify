@@ -31,12 +31,20 @@ export default function ResourcePreview({
   resource: Resource
   onClose: () => void
 }) {
-  const { currentUser, downloadResource, toggleSave, isSaved, authorName, educatorById, notify } =
+  const { currentUser, downloadResource, hydrateResource, toggleSave, isSaved, authorName, educatorById, notify } =
     useApp()
+  const [full, setFull] = useState(resource)
   const saved = isSaved(resource.id)
   const authorEducator = educatorById(resource.authorId)
   const author = authorEducator?.name ?? authorName(resource.authorId)
-  const isLink = Boolean(resource.sourceUrl && !resource.fileData)
+  const isLink = Boolean(full.sourceUrl && !full.fileData && !full.hasFile)
+
+  useEffect(() => {
+    setFull(resource)
+    void hydrateResource(resource.id).then((next) => {
+      if (next) setFull(next)
+    })
+  }, [hydrateResource, resource.id])
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -46,9 +54,9 @@ export default function ResourcePreview({
     return () => window.removeEventListener("keydown", onKey)
   }, [onClose])
 
-  function handleDownload() {
-    const next = downloadResource(resource.id)
-    const current = next ?? resource
+  async function handleDownload() {
+    const next = await downloadResource(resource.id)
+    const current = next ?? full
     const action = deliverResource(current, author)
     notify(action === "open" ? `Opening ${current.title}` : `Downloading ${current.title}`)
   }
@@ -102,7 +110,7 @@ export default function ResourcePreview({
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto bg-canvas p-3 sm:p-6">
-          <PreviewCanvas resource={resource} author={author} />
+          <PreviewCanvas resource={full} author={author} />
         </div>
 
         <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-line bg-surface px-4 py-3 sm:px-6 sm:py-4">

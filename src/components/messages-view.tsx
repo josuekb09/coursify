@@ -22,6 +22,7 @@ export default function MessagesView({
     messagesFor,
     unreadIn,
     educatorById,
+    live,
   } = useApp()
   const [activePeer, setActivePeer] = useState<string | null>(peerId)
   const [draft, setDraft] = useState("")
@@ -54,10 +55,10 @@ export default function MessagesView({
     bottomRef.current?.scrollIntoView({ block: "end" })
   }, [thread.length, activePeer])
 
-  function handleSend(event: FormEvent) {
+  async function handleSend(event: FormEvent) {
     event.preventDefault()
     if (!activePeer) return
-    const result = sendMessage(activePeer, draft)
+    const result = await sendMessage(activePeer, draft)
     if (result) {
       setError(result)
       return
@@ -76,7 +77,12 @@ export default function MessagesView({
     <main className="flex min-w-0 flex-1 flex-col px-4 py-6 sm:px-6 sm:py-8 lg:px-10">
       <h1 className="font-display text-2xl font-bold tracking-[-0.03em] text-ink">Messages</h1>
       <p className="mt-1 text-sm text-muted">
-        Private notes with colleagues. Coordinate lessons without leaving Coursify.
+        Private notes with colleagues, synced on every device. Coordinate lessons without leaving
+        Coursify.
+      </p>
+      <p className="mt-2 inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-muted">
+        <span className={`h-1.5 w-1.5 rounded-full ${live ? "bg-navy" : "bg-[#8a3b32]"}`} />
+        {live ? "Live across devices" : "Reconnecting…"}
       </p>
 
       <div className="mt-6 grid min-h-[min(70dvh,560px)] flex-1 grid-cols-1 overflow-hidden rounded-xl border border-line bg-surface lg:grid-cols-[280px_minmax(0,1fr)]">

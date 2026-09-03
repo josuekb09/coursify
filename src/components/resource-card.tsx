@@ -30,8 +30,8 @@ export default function ResourceCard({
   const isLink = Boolean(resource.sourceUrl && !resource.fileData)
   const isSlides = format === "slides"
 
-  function handleDownload() {
-    const next = downloadResource(resource.id)
+  async function handleDownload() {
+    const next = await downloadResource(resource.id)
     const current = next ?? resource
     const action = deliverResource(current, author)
     notify(action === "open" ? `Opening ${current.title}` : `Downloading ${current.title}`)

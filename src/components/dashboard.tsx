@@ -59,9 +59,9 @@ export default function Dashboard({
     return [...pending, ...rest].slice(0, 4)
   }, [currentUser?.id, educators, followBackSuggestions])
 
-  function handlePost(event: FormEvent) {
+  async function handlePost(event: FormEvent) {
     event.preventDefault()
-    const result = publishPost(body, resourceId || undefined)
+    const result = await publishPost(body, resourceId || undefined)
     if (result) {
       setError(result)
       return

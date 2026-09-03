@@ -73,6 +73,7 @@ export type Resource = {
   sourceUrl?: string
   slides?: Slide[]
   createdAt: string
+  hasFile?: boolean
 }
 
 export type Post = {

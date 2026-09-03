@@ -12,6 +12,8 @@ logs/
 *.log
 .claude-replay.*
 .tmp-*
+data/*.json
+data/*.tmp
 
 /.plugins/
 /.opencode-skills/

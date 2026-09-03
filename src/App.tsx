@@ -16,7 +16,7 @@ import { useApp } from "@/store"
 import type { AuthMode, View } from "@/types"
 
 export default function App() {
-  const { currentUser, educatorById } = useApp()
+  const { currentUser, educatorById, live } = useApp()
   const [view, setView] = useState<View>("dashboard")
   const [profileId, setProfileId] = useState<string | null>(null)
   const [messagePeer, setMessagePeer] = useState<string | null>(null)
@@ -146,6 +146,11 @@ export default function App() {
 
   return (
     <div className="min-h-full overflow-x-hidden bg-canvas text-ink">
+      {!live ? (
+        <p className="bg-navy px-4 py-2 text-center text-[13px] text-white">
+          Reconnecting to Coursify so messages and profiles stay in sync…
+        </p>
+      ) : null}
       <Header
         view={view}
         query={query}
