@@ -2,6 +2,7 @@ import { initializeApp, type FirebaseApp } from "firebase/app"
 import {
   browserLocalPersistence,
   getAuth,
+  indexedDBLocalPersistence,
   initializeAuth,
   type Auth,
 } from "firebase/auth"
@@ -46,7 +47,9 @@ export function getFirebaseAuth() {
   if (!auth) {
     const app = getApp()
     try {
-      auth = initializeAuth(app, { persistence: browserLocalPersistence })
+      auth = initializeAuth(app, {
+        persistence: [indexedDBLocalPersistence, browserLocalPersistence],
+      })
     } catch {
       auth = getAuth(app)
     }
@@ -85,6 +88,9 @@ export function firebaseErrorMessage(error: unknown) {
   }
   if (code === "auth/too-many-requests") {
     return "Too many sign-in attempts. Please wait a moment and try again."
+  }
+  if (code === "permission-denied") {
+    return "Coursify could not read your educator profile. Check Firestore rules and try again."
   }
   if (code === "auth/network-request-failed") {
     return "Could not reach Firebase. Check your connection and try again."

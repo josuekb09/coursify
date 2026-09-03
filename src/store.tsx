@@ -6,7 +6,6 @@ import {
   getFirebaseDb,
   getFirebaseStorage,
   isFirebaseConfigured,
-  whenAuthReady,
 } from "@/firebase"
 import {
   inferInstitutionLevel,
@@ -19,6 +18,8 @@ import type {
   ChatMessage,
   Conversation,
   Educator,
+  Meetup,
+  MeetupInput,
   Post,
   ProfilePatch,
   Resource,
@@ -26,7 +27,7 @@ import type {
   Toast,
   UploadInput,
 } from "@/types"
-import { conversationIdFor, initialsFromName, kindLabel, uid } from "@/utils"
+import { conversationIdFor, initialsFromName, isHttpUrl, kindLabel, uid } from "@/utils"
 import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
@@ -36,9 +37,13 @@ import {
 } from "firebase/auth"
 import {
   addDoc,
+  arrayRemove,
+  arrayUnion,
   collection,
   deleteDoc,
+  deleteField,
   doc,
+  getDoc,
   increment,
   onSnapshot,
   query,
@@ -66,7 +71,9 @@ type AppStore = {
   posts: Post[]
   conversations: Conversation[]
   messages: ChatMessage[]
+  events: Meetup[]
   currentUser: Educator | null
+  signedIn: boolean
   hasAccounts: boolean
   myResources: Resource[]
   savedResources: Resource[]
@@ -78,7 +85,7 @@ type AppStore = {
   login: (email: string, password: string) => Promise<string | null>
   signup: (input: SignupInput) => Promise<string | null>
   logout: () => void
-  updateProfile: (patch: ProfilePatch) => void
+  updateProfile: (patch: ProfilePatch) => Promise<string | null>
   uploadResource: (input: UploadInput) => Promise<string | null>
   deleteResource: (id: string) => void
   downloadResource: (id: string) => Promise<Resource | undefined>
@@ -97,6 +104,9 @@ type AppStore = {
   conversationWith: (peerId: string) => Conversation | undefined
   messagesFor: (conversationId: string) => ChatMessage[]
   unreadIn: (conversationId: string) => number
+  createMeetup: (input: MeetupInput) => Promise<string | null>
+  toggleEventRsvp: (eventId: string) => void
+  deleteMeetup: (eventId: string) => void
   educatorById: (id: string) => Educator | undefined
   authorName: (authorId: string) => string
   notify: (message: string) => void
@@ -195,6 +205,96 @@ function toMessage(id: string, data: Record<string, unknown>): ChatMessage | nul
   }
 }
 
+function toMeetup(id: string, data: Record<string, unknown>): Meetup | null {
+  const title = String(data.title ?? "").trim()
+  const hostId = String(data.hostId ?? "")
+  const startsAt = String(data.startsAt ?? "")
+  if (!title || !hostId || !startsAt) return null
+  const rsvpIds = Array.isArray(data.rsvpIds) ? data.rsvpIds.map(String) : []
+  const meetup: Meetup = {
+    id,
+    title,
+    description: String(data.description ?? ""),
+    hostId,
+    format: data.format === "online" ? "online" : "in-person",
+    startsAt,
+    rsvpIds,
+    createdAt: String(data.createdAt ?? new Date().toISOString()),
+  }
+  if (typeof data.location === "string" && data.location.trim()) meetup.location = data.location.trim()
+  if (typeof data.meetingUrl === "string" && data.meetingUrl.trim()) meetup.meetingUrl = data.meetingUrl.trim()
+  return meetup
+}
+
+function educatorStub(user: User, extras?: Partial<Educator>): Educator {
+  const email = normalizeEmail(user.email ?? extras?.email ?? "")
+  const name = extras?.name || email.split("@")[0] || "Educator"
+  return {
+    id: user.uid,
+    email,
+    name,
+    initials: initialsFromName(name),
+    school: extras?.school ?? "",
+    subject: extras?.subject ?? "Mathematics",
+    bio: extras?.bio ?? "",
+    joinedYear: extras?.joinedYear ?? new Date().getFullYear(),
+    storageBytes: extras?.storageBytes ?? 0,
+    verified: extras?.verified ?? true,
+    institutionLevel:
+      extras?.institutionLevel ?? inferInstitutionLevel(email, extras?.school ?? ""),
+    photoData: extras?.photoData,
+  }
+}
+
+function educatorPayload(profile: Educator) {
+  return compact({
+    email: profile.email,
+    name: profile.name,
+    initials: profile.initials,
+    school: profile.school,
+    subject: profile.subject,
+    bio: profile.bio,
+    joinedYear: profile.joinedYear,
+    storageBytes: profile.storageBytes,
+    verified: profile.verified,
+    institutionLevel: profile.institutionLevel,
+    createdAt: new Date().toISOString(),
+  })
+}
+
+const profileLoads = new Map<string, Promise<Educator>>()
+
+async function loadOrCreateEducator(user: User, extras?: Partial<Educator>): Promise<Educator> {
+  const pending = profileLoads.get(user.uid)
+  if (pending) return pending
+
+  const task = (async () => {
+    const ref = doc(getFirebaseDb(), "educators", user.uid)
+    try {
+      await user.getIdToken()
+      const snap = await getDoc(ref)
+      if (snap.exists()) return toEducator(snap.id, asRecord(snap.data()))
+    } catch {
+      /* Missing doc or a delayed token — create a default profile. */
+    }
+
+    const profile = educatorStub(user, extras)
+    try {
+      await setDoc(ref, educatorPayload(profile), { merge: true })
+    } catch {
+      return profile
+    }
+    return profile
+  })()
+
+  profileLoads.set(user.uid, task)
+  try {
+    return await task
+  } finally {
+    profileLoads.delete(user.uid)
+  }
+}
+
 async function fileToDataUrl(fileUrl: string) {
   const response = await fetch(fileUrl)
   const blob = await response.blob()
@@ -210,7 +310,7 @@ async function uploadDataUrl(path: string, dataUrl: string) {
   const response = await fetch(dataUrl)
   const blob = await response.blob()
   const fileRef = storageRef(getFirebaseStorage(), path)
-  await uploadBytes(fileRef, blob)
+  await uploadBytes(fileRef, blob, { contentType: blob.type || "image/jpeg" })
   return getDownloadURL(fileRef)
 }
 
@@ -221,6 +321,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
   const [posts, setPosts] = useState<Post[]>([])
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [events, setEvents] = useState<Meetup[]>([])
   const [follows, setFollows] = useState<FollowRow[]>([])
   const [savedIds, setSavedIds] = useState<string[]>([])
   const [hasAccounts, setHasAccounts] = useState(false)
@@ -228,6 +329,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
   const [live, setLive] = useState(false)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [hydratedFiles, setHydratedFiles] = useState<Record<string, string>>({})
+  const [sessionProfile, setSessionProfile] = useState<Educator | null>(null)
 
   const notify = useCallback((message: string) => {
     const id = uid("toast")
@@ -237,10 +339,16 @@ export default function AppProvider({ children }: { children: ReactNode }) {
     }, 2800)
   }, [])
 
-  const currentUser = useMemo(
-    () => educators.find((educator) => educator.id === authUser?.uid) ?? null,
-    [authUser?.uid, educators],
-  )
+  const currentUser = useMemo(() => {
+    if (!authUser) return null
+    return educators.find((educator) => educator.id === authUser.uid) ?? sessionProfile
+  }, [authUser, educators, sessionProfile])
+  const signedIn = Boolean(authUser)
+
+  function rememberProfile(profile: Educator) {
+    setSessionProfile(profile)
+    setEducators((current) => [...current.filter((item) => item.id !== profile.id), profile])
+  }
 
   const followsByUser = useMemo(() => {
     const map: Record<string, string[]> = {}
@@ -257,60 +365,74 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    let cancelled = false
-    const unsubscribers: Unsubscribe[] = []
-
-    void (async () => {
-      try {
-        await whenAuthReady()
-        const auth = getFirebaseAuth()
-        const db = getFirebaseDb()
-        unsubscribers.push(
-          onSnapshot(doc(db, "meta", "stats"), (snap) => {
-            setHasAccounts(Boolean(snap.data()?.hasAccounts) || (snap.data()?.users ?? 0) > 0)
-          }),
-        )
-        unsubscribers.push(
-          onAuthStateChanged(auth, (user) => {
-            if (cancelled) return
-            setAuthUser(user)
-            setReady(true)
-            setLive(true)
-          }),
-        )
-      } catch {
-        if (!cancelled) {
-          setReady(true)
-          setLive(false)
-        }
+    const auth = getFirebaseAuth()
+    const db = getFirebaseDb()
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      setAuthUser(user)
+      setReady(true)
+      if (!user) {
+        setSessionProfile(null)
+        setLive(false)
+        return
       }
-    })()
+      setLive(true)
+      void loadOrCreateEducator(user)
+        .then((profile) => {
+          rememberProfile(profile)
+          setLive(true)
+        })
+        .catch((error) => {
+          rememberProfile(educatorStub(user))
+          setLive(true)
+          notify(firebaseErrorMessage(error))
+        })
+    })
+    const unsubStats = onSnapshot(doc(db, "meta", "stats"), (snap) => {
+      setHasAccounts(Boolean(snap.data()?.hasAccounts) || (snap.data()?.users ?? 0) > 0)
+    })
 
     return () => {
-      cancelled = true
-      unsubscribers.forEach((stop) => stop())
+      unsubAuth()
+      unsubStats()
     }
-  }, [])
+  }, [notify])
 
   useEffect(() => {
-    if (!authUser || !isFirebaseConfigured()) {
+    if (!authUser?.uid || !isFirebaseConfigured()) {
       setEducators([])
       setResources([])
       setPosts([])
       setConversations([])
       setMessages([])
+      setEvents([])
       setFollows([])
       setSavedIds([])
       return
     }
 
     const db = getFirebaseDb()
+    const uid = authUser.uid
     const onListenError = () => setLive(false)
     const stops = [
       onSnapshot(
+        doc(db, "educators", uid),
+        (snap) => {
+          if (!snap.exists()) return
+          rememberProfile(toEducator(snap.id, asRecord(snap.data())))
+          setLive(true)
+        },
+        onListenError,
+      ),
+      onSnapshot(
         collection(db, "educators"),
         (snap) => {
-          setEducators(snap.docs.map((item) => toEducator(item.id, asRecord(item.data()))))
+          const incoming = snap.docs.map((item) => toEducator(item.id, asRecord(item.data())))
+          setEducators((current) => {
+            const mine =
+              incoming.find((item) => item.id === uid) ?? current.find((item) => item.id === uid)
+            const rest = incoming.filter((item) => item.id !== uid)
+            return mine ? [...rest, mine] : rest
+          })
           setLive(true)
         },
         onListenError,
@@ -379,22 +501,46 @@ export default function AppProvider({ children }: { children: ReactNode }) {
         },
         onListenError,
       ),
+      onSnapshot(
+        collection(db, "events"),
+        (snap) => {
+          setEvents(
+            snap.docs
+              .map((item) => toMeetup(item.id, asRecord(item.data())))
+              .filter((item): item is Meetup => item !== null)
+              .sort((a, b) => (a.startsAt < b.startsAt ? -1 : 1)),
+          )
+        },
+        onListenError,
+      ),
     ]
 
     return () => stops.forEach((stop) => stop())
-  }, [authUser])
+  }, [authUser?.uid])
 
   const login = useCallback(async (email: string, password: string) => {
     if (!isFirebaseConfigured()) {
       return "Coursify is not connected to Firebase yet. Add the VITE_FIREBASE_ keys and rebuild."
     }
+    let user: User
     try {
-      await signInWithEmailAndPassword(getFirebaseAuth(), normalizeEmail(email), password)
-      return null
+      const cred = await signInWithEmailAndPassword(getFirebaseAuth(), normalizeEmail(email), password)
+      user = cred.user
     } catch (error) {
       return firebaseErrorMessage(error)
     }
-  }, [])
+    setAuthUser(user)
+    setReady(true)
+    setLive(true)
+    try {
+      await user.getIdToken()
+      rememberProfile(await loadOrCreateEducator(user))
+    } catch (error) {
+      rememberProfile(educatorStub(user))
+      notify(firebaseErrorMessage(error))
+    }
+    return null
+  }, [notify])
 
   const signup = useCallback(async (input: SignupInput) => {
     const email = normalizeEmail(input.email)
@@ -408,66 +554,104 @@ export default function AppProvider({ children }: { children: ReactNode }) {
     if (!isFirebaseConfigured()) {
       return "Coursify is not connected to Firebase yet. Add the VITE_FIREBASE_ keys and rebuild."
     }
+    let user: User
     try {
       const cred = await createUserWithEmailAndPassword(getFirebaseAuth(), email, input.password)
-      const educator = compact({
-        email,
-        name,
-        initials: initialsFromName(name),
-        school,
-        subject: input.subject ?? "Mathematics",
-        bio,
-        joinedYear: new Date().getFullYear(),
-        storageBytes: 0,
-        verified: true,
-        institutionLevel: isInstitutionLevel(input.institutionLevel)
-          ? input.institutionLevel
-          : inferInstitutionLevel(email, school),
-        createdAt: new Date().toISOString(),
-      })
-      await setDoc(doc(getFirebaseDb(), "educators", cred.user.uid), educator)
-      await setDoc(doc(getFirebaseDb(), "meta", "stats"), { hasAccounts: true, users: increment(1) }, { merge: true })
-      return null
+      user = cred.user
     } catch (error) {
       return firebaseErrorMessage(error)
     }
-  }, [])
+    const educator = compact({
+      email,
+      name,
+      initials: initialsFromName(name),
+      school,
+      subject: input.subject ?? "Mathematics",
+      bio,
+      joinedYear: new Date().getFullYear(),
+      storageBytes: 0,
+      verified: true,
+      institutionLevel: isInstitutionLevel(input.institutionLevel)
+        ? input.institutionLevel
+        : inferInstitutionLevel(email, school),
+      createdAt: new Date().toISOString(),
+    })
+    setAuthUser(user)
+    rememberProfile(toEducator(user.uid, asRecord(educator)))
+    setReady(true)
+    setLive(true)
+    try {
+      await user.getIdToken()
+      await setDoc(doc(getFirebaseDb(), "educators", user.uid), educator)
+      await setDoc(doc(getFirebaseDb(), "meta", "stats"), { hasAccounts: true, users: increment(1) }, { merge: true })
+    } catch (error) {
+      notify(firebaseErrorMessage(error))
+    }
+    return null
+  }, [notify])
 
   const logout = useCallback(() => {
     void signOut(getFirebaseAuth())
   }, [])
 
   const updateProfile = useCallback(
-    (patch: ProfilePatch) => {
-      if (!authUser) return
-      void (async () => {
-        try {
-          const name = sanitizePlainText(patch.name ?? currentUser?.name ?? "", 80) || currentUser?.name || "Educator"
-          let photoData = patch.photoData === undefined ? currentUser?.photoData : patch.photoData
-          if (photoData && photoData.startsWith("data:image/")) {
-            photoData = await uploadDataUrl(`avatars/${authUser.uid}`, photoData)
+    async (patch: ProfilePatch) => {
+      if (!authUser) return "Sign in to update your profile."
+      try {
+        const name =
+          sanitizePlainText(patch.name ?? currentUser?.name ?? "", 80) || currentUser?.name || "Educator"
+        const school = sanitizePlainText(patch.school ?? currentUser?.school ?? "", 120)
+        const bio = sanitizePlainText(patch.bio ?? currentUser?.bio ?? "", 800)
+        const subject = patch.subject ?? currentUser?.subject ?? "Mathematics"
+        const institutionLevel = isInstitutionLevel(patch.institutionLevel)
+          ? patch.institutionLevel
+          : (currentUser?.institutionLevel ?? "high-school")
+        const initials = initialsFromName(name)
+        let photoData: string | null | undefined =
+          patch.photoData === undefined ? currentUser?.photoData : patch.photoData
+
+        const applyLocal = (photo?: string) => {
+          const next = {
+            ...(currentUser ?? educatorStub(authUser, { name, school, subject, bio, institutionLevel })),
+            name,
+            initials,
+            school,
+            subject,
+            bio,
+            institutionLevel,
+            photoData: photo,
           }
-          await setDoc(
-            doc(getFirebaseDb(), "educators", authUser.uid),
-            compact({
-              name,
-              initials: initialsFromName(name),
-              school: sanitizePlainText(patch.school ?? currentUser?.school ?? "", 120),
-              subject: patch.subject ?? currentUser?.subject ?? "Mathematics",
-              bio: sanitizePlainText(patch.bio ?? currentUser?.bio ?? "", 800),
-              photoData: photoData || null,
-              institutionLevel: isInstitutionLevel(patch.institutionLevel)
-                ? patch.institutionLevel
-                : currentUser?.institutionLevel,
-              updatedAt: new Date().toISOString(),
-            }),
-            { merge: true },
-          )
-          notify("Profile updated.")
-        } catch (error) {
-          notify(firebaseErrorMessage(error))
+          setEducators((current) => [...current.filter((item) => item.id !== authUser.uid), next])
         }
-      })()
+
+        applyLocal(photoData || undefined)
+
+        if (photoData && photoData.startsWith("data:image/")) {
+          photoData = await uploadDataUrl(`avatars/${authUser.uid}/avatar-${Date.now()}.jpg`, photoData)
+          applyLocal(photoData)
+        }
+
+        await setDoc(
+          doc(getFirebaseDb(), "educators", authUser.uid),
+          {
+            name,
+            initials,
+            school,
+            subject,
+            bio,
+            institutionLevel,
+            updatedAt: new Date().toISOString(),
+            photoData: photoData ? photoData : deleteField(),
+          },
+          { merge: true },
+        )
+        notify("Profile updated.")
+        return null
+      } catch (error) {
+        const message = firebaseErrorMessage(error)
+        notify(message)
+        return message
+      }
     },
     [authUser, currentUser, notify],
   )
@@ -798,6 +982,78 @@ export default function AppProvider({ children }: { children: ReactNode }) {
     return conversations.reduce((sum, conversation) => sum + unreadIn(conversation.id), 0)
   }, [authUser, conversations, unreadIn])
 
+  const createMeetup = useCallback(
+    async (input: MeetupInput) => {
+      if (!authUser) return "Sign in to host a meetup."
+      const title = sanitizePlainText(input.title, 160)
+      const description = sanitizePlainText(input.description, 1200)
+      if (!title) return "Give the meetup a title."
+      if (!description) return "Add a short description so colleagues know what to expect."
+      if (!input.startsAt) return "Choose a date and time."
+      const startsAt = new Date(input.startsAt)
+      if (Number.isNaN(startsAt.getTime())) return "Enter a valid date and time."
+      if (input.format === "in-person") {
+        const location = sanitizePlainText(input.location ?? "", 240)
+        if (!location) return "Add a venue or address for this in-person meetup."
+      }
+      if (input.format === "online") {
+        let meetingUrl = (input.meetingUrl ?? "").trim()
+        if (meetingUrl && !/^https?:\/\//i.test(meetingUrl)) meetingUrl = `https://${meetingUrl}`
+        if (!isHttpUrl(meetingUrl)) return "Add a Zoom, Google Meet, or other conference link."
+        input = { ...input, meetingUrl }
+      }
+      try {
+        const eventId = uid("evt")
+        const location = input.format === "in-person" ? sanitizePlainText(input.location ?? "", 240) : ""
+        const meetingUrl = input.format === "online" ? sanitizePlainText(input.meetingUrl ?? "", 500) : ""
+        await setDoc(
+          doc(getFirebaseDb(), "events", eventId),
+          compact({
+            title,
+            description,
+            hostId: authUser.uid,
+            format: input.format,
+            startsAt: startsAt.toISOString(),
+            location: location || undefined,
+            meetingUrl: meetingUrl || undefined,
+            rsvpIds: [authUser.uid],
+            createdAt: new Date().toISOString(),
+          }),
+        )
+        notify(`${title} is now on the Meetups board.`)
+        return null
+      } catch (error) {
+        return firebaseErrorMessage(error)
+      }
+    },
+    [authUser, notify],
+  )
+
+  const toggleEventRsvp = useCallback(
+    (eventId: string) => {
+      if (!authUser) return
+      const meetup = events.find((item) => item.id === eventId)
+      if (!meetup) return
+      const going = meetup.rsvpIds.includes(authUser.uid)
+      void updateDoc(doc(getFirebaseDb(), "events", eventId), {
+        rsvpIds: going ? arrayRemove(authUser.uid) : arrayUnion(authUser.uid),
+      }).catch((error) => notify(firebaseErrorMessage(error)))
+    },
+    [authUser, events, notify],
+  )
+
+  const deleteMeetup = useCallback(
+    (eventId: string) => {
+      if (!authUser) return
+      const meetup = events.find((item) => item.id === eventId)
+      if (!meetup || meetup.hostId !== authUser.uid) return
+      void deleteDoc(doc(getFirebaseDb(), "events", eventId)).catch((error) =>
+        notify(firebaseErrorMessage(error)),
+      )
+    },
+    [authUser, events, notify],
+  )
+
   const educatorLookup = useCallback(
     (id: string) => educators.find((educator) => educator.id === id),
     [educators],
@@ -815,7 +1071,9 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       posts,
       conversations,
       messages,
+      events,
       currentUser,
+      signedIn,
       hasAccounts,
       myResources,
       savedResources,
@@ -846,6 +1104,9 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       conversationWith,
       messagesFor,
       unreadIn,
+      createMeetup,
+      toggleEventRsvp,
+      deleteMeetup,
       educatorById: educatorLookup,
       authorName,
       notify,
@@ -854,11 +1115,14 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       authorName,
       conversationWith,
       conversations,
+      createMeetup,
       currentUser,
+      deleteMeetup,
       deleteResource,
       downloadResource,
       educatorLookup,
       educators,
+      events,
       feedPosts,
       followBackSuggestions,
       followerCount,
@@ -882,8 +1146,10 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       resourcesWithFiles,
       savedResources,
       sendMessage,
+      signedIn,
       signup,
       toasts,
+      toggleEventRsvp,
       toggleFollow,
       toggleSave,
       unreadCount,

@@ -12,6 +12,7 @@ const iconMap = {
   Layers: Icons.Layers,
   Users: Icons.Users,
   Message: Icons.Message,
+  Calendar: Icons.Calendar,
 }
 
 export default function Sidebar({

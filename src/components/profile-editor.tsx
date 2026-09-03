@@ -18,6 +18,8 @@ export default function ProfileEditor({
 }) {
   const { updateProfile } = useApp()
   const [cropping, setCropping] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState({
     name: educator.name,
     school: educator.school,
@@ -27,9 +29,11 @@ export default function ProfileEditor({
     institutionLevel: educator.institutionLevel,
   })
 
-  function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: FormEvent) {
     event.preventDefault()
-    updateProfile({
+    setBusy(true)
+    setError(null)
+    const result = await updateProfile({
       name: form.name,
       school: form.school,
       subject: form.subject,
@@ -37,6 +41,11 @@ export default function ProfileEditor({
       photoData: form.photoData === undefined ? educator.photoData : form.photoData,
       institutionLevel: form.institutionLevel,
     })
+    setBusy(false)
+    if (result) {
+      setError(result)
+      return
+    }
     onClose()
   }
 
@@ -172,6 +181,7 @@ export default function ProfileEditor({
               className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-navy"
             />
           </label>
+          {error ? <p className="text-sm text-[#8a3b32]">{error}</p> : null}
         </div>
 
         <div className="flex justify-end gap-2 border-t border-line px-5 py-4">
@@ -184,9 +194,10 @@ export default function ProfileEditor({
           </button>
           <button
             type="submit"
-            className="rounded-lg bg-navy px-3.5 py-2 text-sm font-semibold text-white hover:bg-navy-hover"
+            disabled={busy}
+            className="rounded-lg bg-navy px-3.5 py-2 text-sm font-semibold text-white hover:bg-navy-hover disabled:opacity-60"
           >
-            Save changes
+            {busy ? "Saving…" : "Save changes"}
           </button>
         </div>
       </form>

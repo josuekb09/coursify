@@ -8,6 +8,15 @@ const stroke = {
   strokeLinejoin: "round" as const,
 }
 
+function Calendar(p: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
+      <rect x="3" y="4.5" width="14" height="12.5" rx="1.5" />
+      <path d="M3 8.5h14M7 3v3M13 3v3" />
+    </svg>
+  )
+}
+
 function Grid(p: IconProps) {
   return (
     <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
@@ -327,6 +336,7 @@ function ChevronRight(p: IconProps) {
 }
 
 const Icons = {
+  Calendar,
   Grid,
   Upload,
   Bookmark,

@@ -188,6 +188,31 @@ export function isHttpUrl(value: string) {
   }
 }
 
+export function formatEventWhen(iso: string) {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+  return date.toLocaleString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+export function mapsEmbedUrl(address: string) {
+  return `https://maps.google.com/maps?q=${encodeURIComponent(address)}&z=14&output=embed`
+}
+
+export function mapsSearchUrl(address: string) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+}
+
+export function isUpcomingEvent(iso: string) {
+  return new Date(iso).getTime() >= Date.now() - 60 * 60 * 1000
+}
+
 export function deliverResource(resource: Resource, author: string) {
   if (resource.fileData && resource.fileName) {
     downloadDataUrl(resource.fileName, resource.fileData)

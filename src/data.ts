@@ -6,6 +6,7 @@ export const MAX_FILE_BYTES = 4_000_000
 export const nav = [
   { label: "Feed" as const, view: "dashboard" as const, icon: "Grid" as const },
   { label: "Discover" as const, view: "discover" as const, icon: "Users" as const },
+  { label: "Meetups" as const, view: "meetups" as const, icon: "Calendar" as const },
   { label: "Messages" as const, view: "messages" as const, icon: "Message" as const },
   { label: "My Uploads" as const, view: "uploads" as const, icon: "Upload" as const },
   { label: "Saved" as const, view: "saved" as const, icon: "Bookmark" as const },

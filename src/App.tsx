@@ -4,6 +4,7 @@ import Dashboard from "@/components/dashboard"
 import DirectoryView from "@/components/directory-view"
 import Landing from "@/components/landing"
 import Header from "@/components/header"
+import MeetupsView from "@/components/meetups-view"
 import MessagesView from "@/components/messages-view"
 import Profile from "@/components/profile"
 import SavedView from "@/components/saved-view"
@@ -16,7 +17,7 @@ import { useApp } from "@/store"
 import type { AuthMode, View } from "@/types"
 
 export default function App() {
-  const { currentUser, educatorById, live } = useApp()
+  const { currentUser, educatorById, live, signedIn } = useApp()
   const [view, setView] = useState<View>("dashboard")
   const [profileId, setProfileId] = useState<string | null>(null)
   const [messagePeer, setMessagePeer] = useState<string | null>(null)
@@ -26,42 +27,41 @@ export default function App() {
   const [gate, setGate] = useState<"landing" | AuthMode>("landing")
   const [phase, setPhase] = useState<"landing" | "auth" | "app">("landing")
   const [profileEditing, setProfileEditing] = useState(false)
-  const booted = useRef(false)
+  const onboarded = useRef(false)
 
   useEffect(() => {
-    if (booted.current) return
-    if (currentUser) {
+    if (signedIn) {
       setPhase("app")
-      booted.current = true
+      return
     }
-  }, [currentUser])
+    if (phase !== "app") return
+    setPhase("landing")
+    setGate("landing")
+    setView("dashboard")
+    setProfileId(null)
+    setMessagePeer(null)
+    setQuery("")
+    setMenuOpen(false)
+    setUploadOpen(false)
+    setProfileEditing(false)
+    onboarded.current = false
+  }, [signedIn, phase])
 
   useEffect(() => {
-    if (currentUser && phase === "auth") {
-      setPhase("app")
-      const incomplete = !currentUser.bio.trim() || !currentUser.school.trim()
-      if (incomplete) {
-        setProfileId(currentUser.id)
-        setView("profile")
-        setProfileEditing(true)
-      }
+    if (!currentUser || phase !== "app") return
+    if (gate !== "signup" && gate !== "login") return
+    if (onboarded.current) return
+    onboarded.current = true
+    const incomplete = !currentUser.bio.trim() || !currentUser.school.trim()
+    if (incomplete) {
+      setProfileId(currentUser.id)
+      setView("profile")
+      setProfileEditing(true)
     }
-  }, [currentUser, phase])
+    setGate("landing")
+  }, [currentUser, gate, phase])
 
-  useEffect(() => {
-    if (!currentUser && phase === "app") {
-      setPhase("landing")
-      setGate("landing")
-      setView("dashboard")
-      setProfileId(null)
-      setMessagePeer(null)
-      setQuery("")
-      setMenuOpen(false)
-      setUploadOpen(false)
-    }
-  }, [currentUser, phase])
-
-  if (phase === "landing") {
+  if (!signedIn && phase === "landing") {
     return (
       <>
         <Landing
@@ -79,7 +79,7 @@ export default function App() {
     )
   }
 
-  if (phase === "auth" || !currentUser) {
+  if (!signedIn) {
     return (
       <>
         <AuthScreen
@@ -92,6 +92,16 @@ export default function App() {
         />
         <ToastViewport />
       </>
+    )
+  }
+
+  if (!currentUser) {
+    return (
+      <div className="grid min-h-full place-items-center bg-canvas text-ink">
+        <p className="font-mono text-[12px] uppercase tracking-[0.14em] text-muted">
+          Opening your workspace…
+        </p>
+      </div>
     )
   }
 
@@ -182,6 +192,7 @@ export default function App() {
         {view === "discover" ? (
           <DirectoryView query={query} onAuthor={goProfile} onMessage={goMessages} />
         ) : null}
+        {view === "meetups" ? <MeetupsView query={query} onAuthor={goProfile} /> : null}
         {view === "messages" ? (
           <MessagesView peerId={messagePeer} query={query} onAuthor={goProfile} />
         ) : null}

@@ -29,15 +29,33 @@ export default function AuthScreen({
   async function handleLogin(event: FormEvent) {
     event.preventDefault()
     setBusy(true)
-    setError(await login(loginForm.email, loginForm.password))
-    setBusy(false)
+    setError(null)
+    try {
+      const result = await login(loginForm.email, loginForm.password)
+      if (result) {
+        setError(result)
+        setBusy(false)
+      }
+    } catch {
+      setError("Something went wrong. Please try again.")
+      setBusy(false)
+    }
   }
 
   async function handleSignup(event: FormEvent) {
     event.preventDefault()
     setBusy(true)
-    setError(await signup(signupForm))
-    setBusy(false)
+    setError(null)
+    try {
+      const result = await signup(signupForm)
+      if (result) {
+        setError(result)
+        setBusy(false)
+      }
+    } catch {
+      setError("Something went wrong. Please try again.")
+      setBusy(false)
+    }
   }
 
   return (

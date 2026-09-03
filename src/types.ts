@@ -1,11 +1,14 @@
 export type View =
   | "dashboard"
   | "discover"
+  | "meetups"
   | "messages"
   | "uploads"
   | "saved"
   | "subjects"
   | "profile"
+
+export type EventFormat = "in-person" | "online"
 
 export type AuthMode = "login" | "signup"
 
@@ -118,6 +121,28 @@ export type ProfilePatch = {
   bio?: string
   photoData?: string | null
   institutionLevel?: InstitutionLevel
+}
+
+export type Meetup = {
+  id: string
+  title: string
+  description: string
+  hostId: string
+  format: EventFormat
+  startsAt: string
+  location?: string
+  meetingUrl?: string
+  rsvpIds: string[]
+  createdAt: string
+}
+
+export type MeetupInput = {
+  title: string
+  description: string
+  format: EventFormat
+  startsAt: string
+  location?: string
+  meetingUrl?: string
 }
 
 export type UploadInput = {
