@@ -27,7 +27,7 @@ export default function ResourceCard({
   const author = authorEducator?.name ?? authorName(resource.authorId)
   const isOwner = currentUser?.id === resource.authorId
   const format = resource.format ?? inferResourceFormat(resource)
-  const isLink = Boolean(resource.sourceUrl && !resource.fileData)
+  const isLink = Boolean(resource.sourceUrl && !resource.fileData && !resource.fileUrl && !resource.hasFile)
   const isSlides = format === "slides"
 
   async function handleDownload() {

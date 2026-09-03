@@ -140,7 +140,7 @@ export default function AuthScreen({
               </p>
               {!hasAccounts ? (
                 <p className="mt-3 text-xs text-muted">
-                  No account on this device yet. Create one with your school email.
+                  No educators have registered yet. Create an account with your school email.
                 </p>
               ) : null}
             </>
@@ -219,7 +219,7 @@ export default function AuthScreen({
                     autoComplete="new-password"
                   />
                   <span className="mt-1.5 block text-[12px] text-muted">
-                    At least 8 characters. Stored as a hashed secret on this device.
+                    At least 8 characters. Your password is stored in Firebase Authentication.
                   </span>
                 </label>
                 {error ? <p className="text-sm text-[#8a3b32]">{error}</p> : null}

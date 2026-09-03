@@ -2,7 +2,10 @@ node_modules/
 dist/
 build/
 .cache/
-.env*
+.env
+.env.local
+.env.production
+.env.*.local
 .vite/
 .next/
 vite.config.*.timestamp-*
@@ -12,6 +15,8 @@ logs/
 *.log
 .claude-replay.*
 .tmp-*
+.firebase/
+firebase-debug.log
 data/*.json
 data/*.tmp
 

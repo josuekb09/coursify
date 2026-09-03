@@ -193,6 +193,17 @@ export function deliverResource(resource: Resource, author: string) {
     downloadDataUrl(resource.fileName, resource.fileData)
     return "download" as const
   }
+  if (resource.fileUrl) {
+    const anchor = document.createElement("a")
+    anchor.href = resource.fileUrl
+    anchor.download = resource.fileName ?? resource.title
+    anchor.target = "_blank"
+    anchor.rel = "noopener noreferrer"
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    return "download" as const
+  }
   if (resource.sourceUrl) {
     window.open(resource.sourceUrl, "_blank", "noopener,noreferrer")
     return "open" as const

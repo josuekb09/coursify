@@ -31,7 +31,7 @@ export default function DirectoryView({
     <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-10">
       <h1 className="font-display text-2xl font-bold tracking-[-0.03em] text-ink">Discover colleagues</h1>
       <p className="mt-1 text-sm text-muted">
-        Search every educator on this device by name or institution, including your own profile.
+        Search every educator by name or institution, including your own profile.
       </p>
 
       <div className="mt-5 flex flex-wrap gap-1.5">
@@ -92,7 +92,7 @@ export default function DirectoryView({
         <div className="mt-6 rounded-xl border border-dashed border-line-strong bg-surface p-12 text-center">
           <p className="font-display text-[15px] font-semibold text-ink">No colleagues match these filters.</p>
           <p className="mt-1 text-sm text-muted">
-            Invite another educator to create an account on this device, or clear the search.
+            Invite another educator to create an account, or clear the search.
           </p>
         </div>
       ) : null}

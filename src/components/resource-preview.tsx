@@ -37,7 +37,7 @@ export default function ResourcePreview({
   const saved = isSaved(resource.id)
   const authorEducator = educatorById(resource.authorId)
   const author = authorEducator?.name ?? authorName(resource.authorId)
-  const isLink = Boolean(full.sourceUrl && !full.fileData && !full.hasFile)
+  const isLink = Boolean(full.sourceUrl && !full.fileData && !full.fileUrl && !full.hasFile)
 
   useEffect(() => {
     setFull(resource)
@@ -181,10 +181,12 @@ function PreviewCanvas({ resource, author }: { resource: Resource; author: strin
     )
   }
 
-  if (resource.format === "video" && resource.fileData && isVideoFile(resource)) {
+  const media = resource.fileData || resource.fileUrl
+
+  if (resource.format === "video" && media && isVideoFile(resource)) {
     return (
       <div className="overflow-hidden rounded-xl border border-line bg-ink">
-        <video src={resource.fileData} controls className="aspect-video w-full">
+        <video src={media} controls className="aspect-video w-full">
           Your browser cannot play this video file.
         </video>
       </div>
@@ -199,8 +201,19 @@ function PreviewCanvas({ resource, author }: { resource: Resource; author: strin
     )
   }
 
-  if (resource.fileData && isPdfResource(resource)) {
-    return <PdfStage dataUrl={resource.fileData} title={resource.title} />
+  if (media && isPdfResource(resource)) {
+    if (media.startsWith("http")) {
+      return (
+        <div className="overflow-hidden rounded-xl border border-line bg-surface">
+          <iframe
+            title={resource.title}
+            src={`${media}#toolbar=1&navpanes=0`}
+            className="h-[min(70dvh,640px)] w-full bg-canvas"
+          />
+        </div>
+      )
+    }
+    return <PdfStage dataUrl={media} title={resource.title} />
   }
 
   if (resource.fileData && isCsvResource(resource)) {

@@ -1,6 +1,20 @@
-import { MAX_FILE_BYTES, STORAGE_CAP_BYTES } from "@/data"
-import { uploadIssue } from "@/formats"
-import * as api from "@/api"
+import { MAX_FILE_BYTES, STORAGE_CAP_BYTES, normalizeSubject } from "@/data"
+import { displayType, uploadIssue } from "@/formats"
+import {
+  firebaseErrorMessage,
+  getFirebaseAuth,
+  getFirebaseDb,
+  getFirebaseStorage,
+  isFirebaseConfigured,
+  whenAuthReady,
+} from "@/firebase"
+import {
+  inferInstitutionLevel,
+  isInstitutionLevel,
+  professionalEmailError,
+  sanitizePlainText,
+  normalizeEmail,
+} from "@/security"
 import type {
   ChatMessage,
   Conversation,
@@ -12,17 +26,39 @@ import type {
   Toast,
   UploadInput,
 } from "@/types"
-import { conversationIdFor, uid } from "@/utils"
+import { conversationIdFor, initialsFromName, kindLabel, uid } from "@/utils"
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+  type User,
+} from "firebase/auth"
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  increment,
+  onSnapshot,
+  query,
+  setDoc,
+  updateDoc,
+  where,
+  type Unsubscribe,
+} from "firebase/firestore"
+import { deleteObject, getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage"
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react"
+
+type FollowRow = { id: string; followerId: string; followeeId: string }
 
 type AppStore = {
   educators: Educator[]
@@ -68,61 +104,130 @@ type AppStore = {
 
 const AppContext = createContext<AppStore | null>(null)
 
-type SnapshotState = {
-  educators: Educator[]
-  resources: Resource[]
-  posts: Post[]
-  conversations: Conversation[]
-  messages: ChatMessage[]
-  savedIds: string[]
-  followsByUser: Record<string, string[]>
-  currentUser: Educator | null
+function asRecord(value: unknown) {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {}
 }
 
-function emptySnapshot(): SnapshotState {
+function compact<T extends Record<string, unknown>>(value: T) {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T
+}
+
+function toEducator(id: string, data: Record<string, unknown>): Educator {
   return {
-    educators: [],
-    resources: [],
-    posts: [],
-    conversations: [],
-    messages: [],
-    savedIds: [],
-    followsByUser: {},
-    currentUser: null,
+    id,
+    email: String(data.email ?? ""),
+    name: String(data.name ?? "Educator"),
+    initials: String(data.initials ?? initialsFromName(String(data.name ?? "E"))),
+    school: String(data.school ?? ""),
+    subject: normalizeSubject(String(data.subject ?? "Mathematics")),
+    bio: String(data.bio ?? ""),
+    joinedYear: Number(data.joinedYear) || new Date().getFullYear(),
+    storageBytes: Number(data.storageBytes) || 0,
+    verified: data.verified === true,
+    institutionLevel: isInstitutionLevel(data.institutionLevel) ? data.institutionLevel : "high-school",
+    photoData: typeof data.photoData === "string" ? data.photoData : undefined,
   }
 }
 
-function applySnapshot(
-  snapshot: api.Snapshot,
-  current: SnapshotState,
-): SnapshotState {
-  const files = new Map(
-    current.resources.filter((item) => item.fileData).map((item) => [item.id, item.fileData]),
-  )
+function toResource(id: string, data: Record<string, unknown>): Resource {
   return {
-    educators: snapshot.educators,
-    resources: snapshot.resources.map((resource) => ({
-      ...resource,
-      fileData: resource.fileData ?? files.get(resource.id),
-    })),
-    posts: snapshot.posts,
-    conversations: snapshot.conversations,
-    messages: snapshot.messages,
-    savedIds: snapshot.savedIds,
-    followsByUser: snapshot.followsByUser,
-    currentUser: snapshot.currentUser,
+    id,
+    title: String(data.title ?? "Resource"),
+    authorId: String(data.authorId ?? ""),
+    subject: normalizeSubject(String(data.subject ?? "Mathematics")),
+    grade: String(data.grade ?? ""),
+    type: String(data.type ?? "Resource"),
+    kind:
+      data.kind === "lesson-plan" || data.kind === "collection" ? data.kind : "resource",
+    format:
+      data.format === "video" ||
+      data.format === "slides" ||
+      data.format === "spreadsheet" ||
+      data.format === "code"
+        ? data.format
+        : "document",
+    mimeType: typeof data.mimeType === "string" ? data.mimeType : undefined,
+    downloads: Number(data.downloads) || 0,
+    saves: Number(data.saves) || 0,
+    fileName: typeof data.fileName === "string" ? data.fileName : undefined,
+    fileSize: typeof data.fileSize === "string" ? data.fileSize : undefined,
+    fileBytes: typeof data.fileBytes === "number" ? data.fileBytes : undefined,
+    fileUrl: typeof data.fileUrl === "string" ? data.fileUrl : undefined,
+    storagePath: typeof data.storagePath === "string" ? data.storagePath : undefined,
+    sourceUrl: typeof data.sourceUrl === "string" ? data.sourceUrl : undefined,
+    createdAt: String(data.createdAt ?? new Date().toISOString().slice(0, 10)),
+    hasFile: Boolean(data.fileUrl || data.storagePath),
   }
+}
+
+function toPost(id: string, data: Record<string, unknown>): Post {
+  const post: Post = {
+    id,
+    authorId: String(data.authorId ?? ""),
+    body: String(data.body ?? ""),
+    createdAt: String(data.createdAt ?? new Date().toISOString()),
+  }
+  if (data.resourceId) post.resourceId = String(data.resourceId)
+  return post
+}
+
+function toConversation(id: string, data: Record<string, unknown>): Conversation | null {
+  const ids = Array.isArray(data.participantIds) ? data.participantIds.map(String) : []
+  if (ids.length !== 2) return null
+  const lastReadAt = asRecord(data.lastReadAt)
+  return {
+    id,
+    participantIds: [...ids].sort() as [string, string],
+    updatedAt: String(data.updatedAt ?? new Date().toISOString()),
+    lastReadAt: Object.fromEntries(Object.entries(lastReadAt).map(([key, value]) => [key, String(value)])),
+  }
+}
+
+function toMessage(id: string, data: Record<string, unknown>): ChatMessage | null {
+  const body = String(data.body ?? "").trim()
+  if (!body || !data.senderId || !data.conversationId) return null
+  return {
+    id,
+    conversationId: String(data.conversationId),
+    senderId: String(data.senderId),
+    body,
+    createdAt: String(data.createdAt ?? new Date().toISOString()),
+  }
+}
+
+async function fileToDataUrl(fileUrl: string) {
+  const response = await fetch(fileUrl)
+  const blob = await response.blob()
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(new Error("Could not read that file."))
+    reader.readAsDataURL(blob)
+  })
+}
+
+async function uploadDataUrl(path: string, dataUrl: string) {
+  const response = await fetch(dataUrl)
+  const blob = await response.blob()
+  const fileRef = storageRef(getFirebaseStorage(), path)
+  await uploadBytes(fileRef, blob)
+  return getDownloadURL(fileRef)
 }
 
 export default function AppProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<SnapshotState>(emptySnapshot)
-  const [token, setToken] = useState<string | null>(() => api.loadSessionToken())
+  const [authUser, setAuthUser] = useState<User | null>(null)
+  const [educators, setEducators] = useState<Educator[]>([])
+  const [resources, setResources] = useState<Resource[]>([])
+  const [posts, setPosts] = useState<Post[]>([])
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [follows, setFollows] = useState<FollowRow[]>([])
+  const [savedIds, setSavedIds] = useState<string[]>([])
   const [hasAccounts, setHasAccounts] = useState(false)
   const [ready, setReady] = useState(false)
-  const [live, setLive] = useState(true)
+  const [live, setLive] = useState(false)
   const [toasts, setToasts] = useState<Toast[]>([])
-  const tokenRef = useRef(token)
-  tokenRef.current = token
+  const [hydratedFiles, setHydratedFiles] = useState<Record<string, string>>({})
 
   const notify = useCallback((message: string) => {
     const id = uid("toast")
@@ -132,405 +237,570 @@ export default function AppProvider({ children }: { children: ReactNode }) {
     }, 2800)
   }, [])
 
-  const acceptAuth = useCallback((nextToken: string, snapshot: api.Snapshot) => {
-    api.saveSessionToken(nextToken)
-    setToken(nextToken)
-    setHasAccounts(true)
-    setLive(true)
-    setState((current) => applySnapshot(snapshot, current))
-  }, [])
+  const currentUser = useMemo(
+    () => educators.find((educator) => educator.id === authUser?.uid) ?? null,
+    [authUser?.uid, educators],
+  )
 
-  const refresh = useCallback(async () => {
-    const current = tokenRef.current
-    if (!current) return
-    try {
-      const snapshot = await api.getSnapshot(current)
-      setLive(true)
-      setState((prev) => applySnapshot(snapshot, prev))
-    } catch (error) {
-      const message = error instanceof Error ? error.message : ""
-      if (message.includes("sign in")) {
-        api.saveSessionToken(null)
-        setToken(null)
-        setState(emptySnapshot())
-      } else {
-        setLive(false)
-      }
+  const followsByUser = useMemo(() => {
+    const map: Record<string, string[]> = {}
+    for (const row of follows) {
+      map[row.followerId] = [...(map[row.followerId] ?? []), row.followeeId]
     }
-  }, [])
+    return map
+  }, [follows])
 
   useEffect(() => {
+    if (!isFirebaseConfigured()) {
+      setReady(true)
+      setLive(false)
+      return
+    }
+
     let cancelled = false
-    async function boot() {
+    const unsubscribers: Unsubscribe[] = []
+
+    void (async () => {
       try {
-        const health = await api.getHealth()
-        if (!cancelled) setHasAccounts(health.hasAccounts)
-      } catch {
-        if (!cancelled) setLive(false)
-      }
-      const existing = tokenRef.current
-      if (existing) {
-        try {
-          const snapshot = await api.getSnapshot(existing)
-          if (!cancelled) {
+        await whenAuthReady()
+        const auth = getFirebaseAuth()
+        const db = getFirebaseDb()
+        unsubscribers.push(
+          onSnapshot(doc(db, "meta", "stats"), (snap) => {
+            setHasAccounts(Boolean(snap.data()?.hasAccounts) || (snap.data()?.users ?? 0) > 0)
+          }),
+        )
+        unsubscribers.push(
+          onAuthStateChanged(auth, (user) => {
+            if (cancelled) return
+            setAuthUser(user)
+            setReady(true)
             setLive(true)
-            setState((prev) => applySnapshot(snapshot, prev))
-          }
-        } catch {
-          api.saveSessionToken(null)
-          if (!cancelled) {
-            setToken(null)
-            setState(emptySnapshot())
-          }
+          }),
+        )
+      } catch {
+        if (!cancelled) {
+          setReady(true)
+          setLive(false)
         }
       }
-      if (!cancelled) setReady(true)
-    }
-    void boot()
+    })()
+
     return () => {
       cancelled = true
+      unsubscribers.forEach((stop) => stop())
     }
   }, [])
 
   useEffect(() => {
-    if (!token) return
-    const tick = () => {
-      void refresh()
+    if (!authUser || !isFirebaseConfigured()) {
+      setEducators([])
+      setResources([])
+      setPosts([])
+      setConversations([])
+      setMessages([])
+      setFollows([])
+      setSavedIds([])
+      return
     }
-    const id = window.setInterval(tick, 2500)
-    const onFocus = () => tick()
-    window.addEventListener("focus", onFocus)
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") tick()
-    })
-    return () => {
-      window.clearInterval(id)
-      window.removeEventListener("focus", onFocus)
+
+    const db = getFirebaseDb()
+    const onListenError = () => setLive(false)
+    const stops = [
+      onSnapshot(
+        collection(db, "educators"),
+        (snap) => {
+          setEducators(snap.docs.map((item) => toEducator(item.id, asRecord(item.data()))))
+          setLive(true)
+        },
+        onListenError,
+      ),
+      onSnapshot(
+        collection(db, "resources"),
+        (snap) => {
+          setResources(snap.docs.map((item) => toResource(item.id, asRecord(item.data()))))
+        },
+        onListenError,
+      ),
+      onSnapshot(
+        collection(db, "posts"),
+        (snap) => {
+          setPosts(
+            snap.docs
+              .map((item) => toPost(item.id, asRecord(item.data())))
+              .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
+          )
+        },
+        onListenError,
+      ),
+      onSnapshot(
+        collection(db, "follows"),
+        (snap) => {
+          setFollows(
+            snap.docs.map((item) => {
+              const data = asRecord(item.data())
+              return {
+                id: item.id,
+                followerId: String(data.followerId ?? ""),
+                followeeId: String(data.followeeId ?? ""),
+              }
+            }),
+          )
+        },
+        onListenError,
+      ),
+      onSnapshot(
+        query(collection(db, "saves"), where("userId", "==", authUser.uid)),
+        (snap) => {
+          setSavedIds(snap.docs.map((item) => String(asRecord(item.data()).resourceId ?? "")))
+        },
+        onListenError,
+      ),
+      onSnapshot(
+        query(collection(db, "conversations"), where("participantIds", "array-contains", authUser.uid)),
+        (snap) => {
+          setConversations(
+            snap.docs
+              .map((item) => toConversation(item.id, asRecord(item.data())))
+              .filter((item): item is Conversation => item !== null),
+          )
+        },
+        onListenError,
+      ),
+      onSnapshot(
+        query(collection(db, "messages"), where("participantIds", "array-contains", authUser.uid)),
+        (snap) => {
+          setMessages(
+            snap.docs
+              .map((item) => toMessage(item.id, asRecord(item.data())))
+              .filter((item): item is ChatMessage => item !== null)
+              .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1)),
+          )
+        },
+        onListenError,
+      ),
+    ]
+
+    return () => stops.forEach((stop) => stop())
+  }, [authUser])
+
+  const login = useCallback(async (email: string, password: string) => {
+    if (!isFirebaseConfigured()) {
+      return "Coursify is not connected to Firebase yet. Add the VITE_FIREBASE_ keys and rebuild."
     }
-  }, [refresh, token])
+    try {
+      await signInWithEmailAndPassword(getFirebaseAuth(), normalizeEmail(email), password)
+      return null
+    } catch (error) {
+      return firebaseErrorMessage(error)
+    }
+  }, [])
 
-  const login = useCallback(
-    async (email: string, password: string) => {
-      try {
-        const result = await api.login(email, password)
-        acceptAuth(result.token, result.snapshot)
-        notify(`Welcome back, ${result.snapshot.currentUser.name.split(" ")[0]}.`)
-        return null
-      } catch (error) {
-        return error instanceof Error ? error.message : "Email or password is incorrect."
-      }
-    },
-    [acceptAuth, notify],
-  )
-
-  const signup = useCallback(
-    async (input: SignupInput) => {
-      try {
-        const result = await api.signup(input)
-        acceptAuth(result.token, result.snapshot)
-        notify(`Welcome to Coursify, ${result.snapshot.currentUser.name.split(" ")[0]}.`)
-        return null
-      } catch (error) {
-        return error instanceof Error ? error.message : "Could not create that account."
-      }
-    },
-    [acceptAuth, notify],
-  )
+  const signup = useCallback(async (input: SignupInput) => {
+    const email = normalizeEmail(input.email)
+    const name = sanitizePlainText(input.name, 80)
+    const school = sanitizePlainText(input.school ?? "", 120)
+    const bio = sanitizePlainText(input.bio ?? "", 800)
+    const emailError = professionalEmailError(email)
+    if (!name) return "Please enter your full name."
+    if (emailError) return emailError
+    if (input.password.length < 8) return "Password must be at least 8 characters."
+    if (!isFirebaseConfigured()) {
+      return "Coursify is not connected to Firebase yet. Add the VITE_FIREBASE_ keys and rebuild."
+    }
+    try {
+      const cred = await createUserWithEmailAndPassword(getFirebaseAuth(), email, input.password)
+      const educator = compact({
+        email,
+        name,
+        initials: initialsFromName(name),
+        school,
+        subject: input.subject ?? "Mathematics",
+        bio,
+        joinedYear: new Date().getFullYear(),
+        storageBytes: 0,
+        verified: true,
+        institutionLevel: isInstitutionLevel(input.institutionLevel)
+          ? input.institutionLevel
+          : inferInstitutionLevel(email, school),
+        createdAt: new Date().toISOString(),
+      })
+      await setDoc(doc(getFirebaseDb(), "educators", cred.user.uid), educator)
+      await setDoc(doc(getFirebaseDb(), "meta", "stats"), { hasAccounts: true, users: increment(1) }, { merge: true })
+      return null
+    } catch (error) {
+      return firebaseErrorMessage(error)
+    }
+  }, [])
 
   const logout = useCallback(() => {
-    const current = tokenRef.current
-    if (current) void api.logout(current).catch(() => undefined)
-    api.saveSessionToken(null)
-    setToken(null)
-    setState(emptySnapshot())
+    void signOut(getFirebaseAuth())
   }, [])
 
   const updateProfile = useCallback(
     (patch: ProfilePatch) => {
-      const current = tokenRef.current
-      if (!current) return
-      void api
-        .patchProfile(current, patch)
-        .then((snapshot) => setState((prev) => applySnapshot(snapshot, prev)))
-        .then(() => notify("Profile updated."))
-        .catch((error: Error) => notify(error.message))
+      if (!authUser) return
+      void (async () => {
+        try {
+          const name = sanitizePlainText(patch.name ?? currentUser?.name ?? "", 80) || currentUser?.name || "Educator"
+          let photoData = patch.photoData === undefined ? currentUser?.photoData : patch.photoData
+          if (photoData && photoData.startsWith("data:image/")) {
+            photoData = await uploadDataUrl(`avatars/${authUser.uid}`, photoData)
+          }
+          await setDoc(
+            doc(getFirebaseDb(), "educators", authUser.uid),
+            compact({
+              name,
+              initials: initialsFromName(name),
+              school: sanitizePlainText(patch.school ?? currentUser?.school ?? "", 120),
+              subject: patch.subject ?? currentUser?.subject ?? "Mathematics",
+              bio: sanitizePlainText(patch.bio ?? currentUser?.bio ?? "", 800),
+              photoData: photoData || null,
+              institutionLevel: isInstitutionLevel(patch.institutionLevel)
+                ? patch.institutionLevel
+                : currentUser?.institutionLevel,
+              updatedAt: new Date().toISOString(),
+            }),
+            { merge: true },
+          )
+          notify("Profile updated.")
+        } catch (error) {
+          notify(firebaseErrorMessage(error))
+        }
+      })()
     },
-    [notify],
+    [authUser, currentUser, notify],
   )
 
   const uploadResource = useCallback(
     async (input: UploadInput) => {
-      const current = tokenRef.current
-      if (!current || !state.currentUser) return "Sign in to upload."
+      if (!authUser || !currentUser) return "Sign in to upload."
+      const title = sanitizePlainText(input.title, 160)
+      if (!title) return "Give the resource a title."
       const issue = uploadIssue({ ...input, sourceUrl: input.sourceUrl ?? "" })
       if (issue) return issue
       if (input.file && input.file.size > MAX_FILE_BYTES) {
         return "Please keep uploads under 4 MB for this workspace."
       }
       const size = input.file?.size ?? 0
-      if (state.currentUser.storageBytes + size > STORAGE_CAP_BYTES) {
+      if (currentUser.storageBytes + size > STORAGE_CAP_BYTES) {
         return "Not enough storage for this file."
       }
-      let fileData: string | undefined
-      if (input.file) {
-        try {
-          fileData = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader()
-            reader.onload = () => resolve(String(reader.result))
-            reader.onerror = () => reject(new Error("read"))
-            reader.readAsDataURL(input.file!)
-          })
-        } catch {
-          return "Could not read that file."
-        }
-      }
       try {
-        const snapshot = await api.createResource(current, {
-          title: input.title,
+        const resourceId = uid("res")
+        let fileUrl: string | undefined
+        let storagePath: string | undefined
+        if (input.file) {
+          storagePath = `resources/${authUser.uid}/${resourceId}/${input.file.name}`
+          const fileRef = storageRef(getFirebaseStorage(), storagePath)
+          await uploadBytes(fileRef, input.file)
+          fileUrl = await getDownloadURL(fileRef)
+        }
+        const resource = compact({
+          title,
+          authorId: authUser.uid,
           subject: input.subject,
           grade: input.grade,
           kind: input.kind,
           format: input.format,
-          sourceUrl: input.sourceUrl,
-          fileName: input.file?.name,
-          fileBytes: input.file?.size,
-          mimeType: input.file?.type,
-          fileData,
+          mimeType: input.file?.type || undefined,
+          type: displayType(kindLabel(input.kind), { format: input.format, fileName: input.file?.name, sourceUrl: input.sourceUrl }),
+          downloads: 0,
+          saves: 0,
+          fileName: input.file?.name ? sanitizePlainText(input.file.name, 120) : undefined,
+          fileSize: input.file ? `${(input.file.size / 1_000_000).toFixed(1)} MB` : undefined,
+          fileBytes: size || undefined,
+          fileUrl,
+          storagePath,
+          sourceUrl: sanitizePlainText(input.sourceUrl ?? "", 500) || undefined,
+          createdAt: new Date().toISOString().slice(0, 10),
         })
-        setState((prev) => applySnapshot(snapshot, prev))
-        notify(`${input.title} was added to your library.`)
+        await setDoc(doc(getFirebaseDb(), "resources", resourceId), resource)
+        await addDoc(collection(getFirebaseDb(), "posts"), {
+          authorId: authUser.uid,
+          body: `Shared ${title} with the library.`,
+          resourceId,
+          createdAt: new Date().toISOString(),
+        })
+        if (size) {
+          await updateDoc(doc(getFirebaseDb(), "educators", authUser.uid), {
+            storageBytes: increment(size),
+          })
+        }
+        notify(`${title} was added to your library.`)
         return null
       } catch (error) {
-        return error instanceof Error ? error.message : "Could not upload that resource."
+        return firebaseErrorMessage(error)
       }
     },
-    [notify, state.currentUser],
+    [authUser, currentUser, notify],
   )
 
   const deleteResource = useCallback(
     (id: string) => {
-      const current = tokenRef.current
-      if (!current) return
-      void api
-        .removeResource(current, id)
-        .then((snapshot) => {
-          setState((prev) => applySnapshot(snapshot, prev))
+      if (!authUser) return
+      const resource = resources.find((item) => item.id === id)
+      if (!resource || resource.authorId !== authUser.uid) return
+      void (async () => {
+        try {
+          if (resource.storagePath) {
+            await deleteObject(storageRef(getFirebaseStorage(), resource.storagePath)).catch(() => undefined)
+          }
+          await deleteDoc(doc(getFirebaseDb(), "resources", id))
+          if (resource.fileBytes) {
+            await updateDoc(doc(getFirebaseDb(), "educators", authUser.uid), {
+              storageBytes: increment(-resource.fileBytes),
+            })
+          }
           notify("Resource removed from your library.")
-        })
-        .catch((error: Error) => notify(error.message))
+        } catch (error) {
+          notify(firebaseErrorMessage(error))
+        }
+      })()
     },
-    [notify],
+    [authUser, notify, resources],
   )
 
-  const hydrateResource = useCallback(async (id: string) => {
-    const current = tokenRef.current
-    if (!current) return undefined
-    try {
-      const resource = await api.getResource(current, id)
-      setState((prev) => ({
-        ...prev,
-        resources: prev.resources.map((item) => (item.id === id ? { ...item, ...resource } : item)),
-      }))
-      return resource
-    } catch {
-      return undefined
-    }
-  }, [])
+  const hydrateResource = useCallback(
+    async (id: string) => {
+      const resource = resources.find((item) => item.id === id)
+      if (!resource) return undefined
+      if (resource.fileData || hydratedFiles[id]) {
+        return { ...resource, fileData: resource.fileData ?? hydratedFiles[id] }
+      }
+      if (!resource.fileUrl) return resource
+      try {
+        const fileData = await fileToDataUrl(resource.fileUrl)
+        setHydratedFiles((current) => ({ ...current, [id]: fileData }))
+        return { ...resource, fileData, hasFile: true }
+      } catch {
+        return resource
+      }
+    },
+    [hydratedFiles, resources],
+  )
 
   const downloadResource = useCallback(
     async (id: string) => {
-      const current = tokenRef.current
-      if (!current) return undefined
+      const resource = await hydrateResource(id)
+      if (!resource) return undefined
       try {
-        const resource = await api.downloadResource(current, id)
-        setState((prev) => ({
-          ...prev,
-          resources: prev.resources.map((item) =>
-            item.id === id ? { ...item, ...resource, downloads: resource.downloads } : item,
-          ),
-        }))
-        return resource
+        await updateDoc(doc(getFirebaseDb(), "resources", id), { downloads: increment(1) })
       } catch {
-        return undefined
+        /* still allow the download */
       }
+      return { ...resource, downloads: resource.downloads + 1 }
     },
-    [],
+    [hydrateResource],
   )
 
-  const toggleSave = useCallback((id: string) => {
-    const current = tokenRef.current
-    if (!current) return
-    void api.toggleSave(current, id).then((snapshot) => setState((prev) => applySnapshot(snapshot, prev)))
-  }, [])
-
-  const isSaved = useCallback(
-    (id: string) => state.savedIds.includes(id),
-    [state.savedIds],
+  const toggleSave = useCallback(
+    (id: string) => {
+      if (!authUser) return
+      const saveId = `${authUser.uid}_${id}`
+      const saved = savedIds.includes(id)
+      void (async () => {
+        try {
+          if (saved) await deleteDoc(doc(getFirebaseDb(), "saves", saveId))
+          else await setDoc(doc(getFirebaseDb(), "saves", saveId), { userId: authUser.uid, resourceId: id })
+          await updateDoc(doc(getFirebaseDb(), "resources", id), { saves: increment(saved ? -1 : 1) })
+        } catch (error) {
+          notify(firebaseErrorMessage(error))
+        }
+      })()
+    },
+    [authUser, notify, savedIds],
   )
 
-  const toggleFollow = useCallback((educatorId: string) => {
-    const current = tokenRef.current
-    if (!current || educatorId === state.currentUser?.id) return
-    void api
-      .toggleFollow(current, educatorId)
-      .then((snapshot) => setState((prev) => applySnapshot(snapshot, prev)))
-  }, [state.currentUser?.id])
+  const isSaved = useCallback((id: string) => savedIds.includes(id), [savedIds])
+
+  const toggleFollow = useCallback(
+    (educatorId: string) => {
+      if (!authUser || educatorId === authUser.uid) return
+      const followId = `${authUser.uid}_${educatorId}`
+      const following = (followsByUser[authUser.uid] ?? []).includes(educatorId)
+      void (async () => {
+        try {
+          if (following) await deleteDoc(doc(getFirebaseDb(), "follows", followId))
+          else {
+            await setDoc(doc(getFirebaseDb(), "follows", followId), {
+              followerId: authUser.uid,
+              followeeId: educatorId,
+              createdAt: new Date().toISOString(),
+            })
+          }
+        } catch (error) {
+          notify(firebaseErrorMessage(error))
+        }
+      })()
+    },
+    [authUser, followsByUser, notify],
+  )
 
   const isFollowing = useCallback(
     (educatorId: string) => {
-      if (!state.currentUser) return false
-      return (state.followsByUser[state.currentUser.id] ?? []).includes(educatorId)
+      if (!authUser) return false
+      return (followsByUser[authUser.uid] ?? []).includes(educatorId)
     },
-    [state.currentUser, state.followsByUser],
+    [authUser, followsByUser],
   )
 
   const followsYou = useCallback(
     (educatorId: string) => {
-      if (!state.currentUser) return false
-      return (state.followsByUser[educatorId] ?? []).includes(state.currentUser.id)
+      if (!authUser) return false
+      return (followsByUser[educatorId] ?? []).includes(authUser.uid)
     },
-    [state.currentUser, state.followsByUser],
+    [authUser, followsByUser],
   )
 
   const followBackSuggestions = useMemo(() => {
-    if (!state.currentUser) return []
-    const myId = state.currentUser.id
-    const following = state.followsByUser[myId] ?? []
-    return state.educators
-      .filter((educator) => educator.id !== myId)
-      .filter((educator) => (state.followsByUser[educator.id] ?? []).includes(myId))
+    if (!authUser) return []
+    const following = followsByUser[authUser.uid] ?? []
+    return educators
+      .filter((educator) => educator.id !== authUser.uid)
+      .filter((educator) => (followsByUser[educator.id] ?? []).includes(authUser.uid))
       .filter((educator) => !following.includes(educator.id))
-  }, [state.currentUser, state.educators, state.followsByUser])
+  }, [authUser, educators, followsByUser])
 
   const followerCount = useCallback(
-    (educatorId: string) =>
-      Object.values(state.followsByUser).filter((ids) => ids.includes(educatorId)).length,
-    [state.followsByUser],
+    (educatorId: string) => follows.filter((row) => row.followeeId === educatorId).length,
+    [follows],
   )
 
   const followingCount = useCallback(
-    (educatorId: string) => (state.followsByUser[educatorId] ?? []).length,
-    [state.followsByUser],
+    (educatorId: string) => (followsByUser[educatorId] ?? []).length,
+    [followsByUser],
   )
 
   const publishPost = useCallback(
     async (body: string, resourceId?: string) => {
-      const current = tokenRef.current
-      if (!current) return "Sign in to post."
+      if (!authUser) return "Sign in to post."
+      const text = sanitizePlainText(body, 800)
+      if (!text && !resourceId) return "Write a short update before posting."
       try {
-        const snapshot = await api.createPost(current, body, resourceId)
-        setState((prev) => applySnapshot(snapshot, prev))
+        await addDoc(collection(getFirebaseDb(), "posts"), compact({
+          authorId: authUser.uid,
+          body: text || "Shared a resource with colleagues.",
+          resourceId,
+          createdAt: new Date().toISOString(),
+        }))
         notify("Posted to the academic feed.")
         return null
       } catch (error) {
-        return error instanceof Error ? error.message : "Could not publish that post."
+        return firebaseErrorMessage(error)
       }
     },
-    [notify],
+    [authUser, notify],
   )
 
-  const sendMessage = useCallback(async (peerId: string, body: string) => {
-    const current = tokenRef.current
-    if (!current || !state.currentUser) return "Sign in to send a message."
-    const text = body.trim()
-    if (!text) return "Write a message first."
-    const now = new Date().toISOString()
-    const conversationId = conversationIdFor(state.currentUser.id, peerId)
-    const optimistic: ChatMessage = {
-      id: uid("msg"),
-      conversationId,
-      senderId: state.currentUser.id,
-      body: text,
-      createdAt: now,
-    }
-    setState((prev) => {
-      const existing = prev.conversations.find((item) => item.id === conversationId)
-      const conversation: Conversation = existing
-        ? { ...existing, updatedAt: now, lastReadAt: { ...existing.lastReadAt, [state.currentUser!.id]: now } }
-        : {
-            id: conversationId,
-            participantIds: [state.currentUser!.id, peerId].sort() as [string, string],
+  const sendMessage = useCallback(
+    async (peerId: string, body: string) => {
+      if (!authUser) return "Sign in to send a message."
+      if (peerId === authUser.uid) return "You cannot message yourself."
+      const text = sanitizePlainText(body, 2000)
+      if (!text) return "Write a message first."
+      const now = new Date().toISOString()
+      const conversationId = conversationIdFor(authUser.uid, peerId)
+      const participantIds = [authUser.uid, peerId].sort()
+      try {
+        await setDoc(
+          doc(getFirebaseDb(), "conversations", conversationId),
+          {
+            participantIds,
             updatedAt: now,
-            lastReadAt: { [state.currentUser!.id]: now },
-          }
-      return {
-        ...prev,
-        conversations: [conversation, ...prev.conversations.filter((item) => item.id !== conversationId)],
-        messages: [...prev.messages, optimistic],
+            lastMessage: text,
+          },
+          { merge: true },
+        )
+        await updateDoc(doc(getFirebaseDb(), "conversations", conversationId), {
+          [`lastReadAt.${authUser.uid}`]: now,
+        })
+        await addDoc(collection(getFirebaseDb(), "messages"), {
+          conversationId,
+          senderId: authUser.uid,
+          body: text,
+          createdAt: now,
+          participantIds,
+        })
+        return null
+      } catch (error) {
+        return firebaseErrorMessage(error)
       }
-    })
-    try {
-      const snapshot = await api.sendMessage(current, peerId, text)
-      setState((prev) => applySnapshot(snapshot, prev))
-      return null
-    } catch (error) {
-      await refresh()
-      return error instanceof Error ? error.message : "Could not send that message."
-    }
-  }, [refresh, state.currentUser])
+    },
+    [authUser],
+  )
 
-  const markConversationRead = useCallback((conversationId: string) => {
-    const current = tokenRef.current
-    if (!current) return
-    void api.markRead(current, conversationId).then((snapshot) => setState((prev) => applySnapshot(snapshot, prev)))
-  }, [])
+  const markConversationRead = useCallback(
+    (conversationId: string) => {
+      if (!authUser) return
+      void updateDoc(doc(getFirebaseDb(), "conversations", conversationId), {
+        [`lastReadAt.${authUser.uid}`]: new Date().toISOString(),
+      }).catch(() => undefined)
+    },
+    [authUser],
+  )
 
   const conversationWith = useCallback(
     (peerId: string) => {
-      if (!state.currentUser) return undefined
-      const id = conversationIdFor(state.currentUser.id, peerId)
-      return state.conversations.find((item) => item.id === id)
+      if (!authUser) return undefined
+      const id = conversationIdFor(authUser.uid, peerId)
+      return conversations.find((item) => item.id === id)
     },
-    [state.conversations, state.currentUser],
+    [authUser, conversations],
   )
 
   const messagesFor = useCallback(
-    (conversationId: string) =>
-      state.messages.filter((item) => item.conversationId === conversationId),
-    [state.messages],
+    (conversationId: string) => messages.filter((item) => item.conversationId === conversationId),
+    [messages],
   )
 
   const unreadIn = useCallback(
     (conversationId: string) => {
-      if (!state.currentUser) return 0
-      const conversation = state.conversations.find((item) => item.id === conversationId)
-      const lastRead = conversation?.lastReadAt[state.currentUser.id] ?? ""
-      return state.messages.filter(
+      if (!authUser) return 0
+      const conversation = conversations.find((item) => item.id === conversationId)
+      const lastRead = conversation?.lastReadAt[authUser.uid] ?? ""
+      return messages.filter(
         (item) =>
           item.conversationId === conversationId &&
-          item.senderId !== state.currentUser!.id &&
+          item.senderId !== authUser.uid &&
           item.createdAt > lastRead,
       ).length
     },
-    [state.conversations, state.currentUser, state.messages],
+    [authUser, conversations, messages],
+  )
+
+  const resourcesWithFiles = useMemo(
+    () =>
+      resources.map((resource) =>
+        hydratedFiles[resource.id] ? { ...resource, fileData: hydratedFiles[resource.id], hasFile: true } : resource,
+      ),
+    [hydratedFiles, resources],
   )
 
   const myResources = useMemo(() => {
-    if (!state.currentUser) return []
-    return state.resources.filter((item) => item.authorId === state.currentUser?.id)
-  }, [state.currentUser, state.resources])
+    if (!authUser) return []
+    return resourcesWithFiles.filter((item) => item.authorId === authUser.uid)
+  }, [authUser, resourcesWithFiles])
 
   const savedResources = useMemo(() => {
-    const ids = new Set(state.savedIds)
-    return state.resources.filter((item) => ids.has(item.id))
-  }, [state.resources, state.savedIds])
+    const ids = new Set(savedIds)
+    return resourcesWithFiles.filter((item) => ids.has(item.id))
+  }, [resourcesWithFiles, savedIds])
 
   const feedPosts = useMemo(() => {
-    if (!state.currentUser) return []
-    const following = new Set(state.followsByUser[state.currentUser.id] ?? [])
-    return state.posts.filter(
-      (post) => post.authorId === state.currentUser?.id || following.has(post.authorId),
-    )
-  }, [state.currentUser, state.followsByUser, state.posts])
+    if (!authUser) return []
+    const following = new Set(followsByUser[authUser.uid] ?? [])
+    return posts.filter((post) => post.authorId === authUser.uid || following.has(post.authorId))
+  }, [authUser, followsByUser, posts])
 
   const unreadCount = useMemo(() => {
-    if (!state.currentUser) return 0
-    return state.conversations.reduce((sum, conversation) => sum + unreadIn(conversation.id), 0)
-  }, [state.conversations, state.currentUser, unreadIn])
+    if (!authUser) return 0
+    return conversations.reduce((sum, conversation) => sum + unreadIn(conversation.id), 0)
+  }, [authUser, conversations, unreadIn])
 
   const educatorLookup = useCallback(
-    (id: string) => state.educators.find((educator) => educator.id === id),
-    [state.educators],
+    (id: string) => educators.find((educator) => educator.id === id),
+    [educators],
   )
 
   const authorName = useCallback(
@@ -540,12 +810,12 @@ export default function AppProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AppStore>(
     () => ({
-      educators: state.educators,
-      resources: state.resources,
-      posts: state.posts,
-      conversations: state.conversations,
-      messages: state.messages,
-      currentUser: state.currentUser,
+      educators,
+      resources: resourcesWithFiles,
+      posts,
+      conversations,
+      messages,
+      currentUser,
       hasAccounts,
       myResources,
       savedResources,
@@ -583,9 +853,12 @@ export default function AppProvider({ children }: { children: ReactNode }) {
     [
       authorName,
       conversationWith,
+      conversations,
+      currentUser,
       deleteResource,
       downloadResource,
       educatorLookup,
+      educators,
       feedPosts,
       followBackSuggestions,
       followerCount,
@@ -599,20 +872,17 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       login,
       logout,
       markConversationRead,
+      messages,
       messagesFor,
       myResources,
       notify,
+      posts,
       publishPost,
       ready,
+      resourcesWithFiles,
       savedResources,
       sendMessage,
       signup,
-      state.conversations,
-      state.currentUser,
-      state.educators,
-      state.messages,
-      state.posts,
-      state.resources,
       toasts,
       toggleFollow,
       toggleSave,

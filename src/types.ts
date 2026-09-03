@@ -70,6 +70,8 @@ export type Resource = {
   fileSize?: string
   fileBytes?: number
   fileData?: string
+  fileUrl?: string
+  storagePath?: string
   sourceUrl?: string
   slides?: Slide[]
   createdAt: string

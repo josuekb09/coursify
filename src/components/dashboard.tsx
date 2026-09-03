@@ -281,7 +281,7 @@ export default function Dashboard({
               ))}
               {suggestions.length === 0 ? (
                 <p className="text-sm text-muted">
-                  No other educators on this device yet. Invite a colleague to create an account.
+                  No other educators have joined yet. Invite a colleague to create an account.
                 </p>
               ) : null}
             </div>
