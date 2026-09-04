@@ -12,10 +12,10 @@ const field =
   "h-11 w-full rounded-xl border border-line bg-surface px-3.5 text-sm text-ink outline-none transition-[border-color,box-shadow] focus:border-navy focus:shadow-[0_0_0_4px_rgba(26,43,74,0.12)]"
 
 const photos = {
-  hero: "/landing-images/picture 1.jpg",
-  workspace: "/landing-images/picture 2.jpg",
-  meetups: "/landing-images/picture 3.jpg",
-  mission: "/landing-images/picture 4.jpg",
+  hero: encodeURI("/landing-images/picture 1.jpg"),
+  workspace: encodeURI("/landing-images/picture 2.jpg"),
+  meetups: encodeURI("/landing-images/picture 3.jpg"),
+  mission: encodeURI("/landing-images/picture 4.jpg"),
 }
 
 const features = [
@@ -117,6 +117,16 @@ function Photo({
   className?: string
   eager?: boolean
 }) {
+  const [failed, setFailed] = useState(false)
+  if (failed) {
+    return (
+      <div
+        className={`h-full w-full rounded-2xl border border-slate-200 bg-navy-soft shadow-xl ${className}`}
+        role="img"
+        aria-label={alt}
+      />
+    )
+  }
   return (
     <img
       src={src}
@@ -124,6 +134,7 @@ function Photo({
       className={`h-full w-full rounded-2xl border border-slate-200 object-cover shadow-xl transition-transform duration-700 group-hover:scale-[1.04] ${className}`}
       loading={eager ? "eager" : "lazy"}
       decoding="async"
+      onError={() => setFailed(true)}
     />
   )
 }

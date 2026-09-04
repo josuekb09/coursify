@@ -385,10 +385,10 @@ function timedWrite<T>(promise: Promise<T>, message = REQUEST_TIMEOUT) {
 }
 
 async function deleteQueryDocs(target: Query) {
-  const snap = await getDocs(target)
+  const snap = await withTimeout(getDocs(target), 8_000, REQUEST_TIMEOUT)
   for (let index = 0; index < snap.docs.length; index += 20) {
     const chunk = snap.docs.slice(index, index + 20)
-    await Promise.all(chunk.map((item) => deleteDoc(item.ref)))
+    await Promise.all(chunk.map((item) => timedWrite(deleteDoc(item.ref))))
   }
 }
 
@@ -539,7 +539,8 @@ export default function AppProvider({ children }: { children: ReactNode }) {
             const mine = mineIncoming ? mergeEducator(mineCurrent, mineIncoming) : mineCurrent
             if (mine) writeCachedProfile(mine)
             const rest = incoming.filter((item) => item.id !== uid)
-            return mine ? [...rest, mine] : rest
+            if (mine) return [...rest, mine]
+            return rest.length > 0 ? rest : current
           })
           setLive(true)
         },
@@ -716,7 +717,15 @@ export default function AppProvider({ children }: { children: ReactNode }) {
   }, [notify])
 
   const logout = useCallback(() => {
-    void signOut(getFirebaseAuth())
+    void (async () => {
+      try {
+        await withTimeout(signOut(getFirebaseAuth()), 8_000, "Could not sign out. Please try again.")
+      } catch {
+        setAuthUser(null)
+        setSessionProfile(null)
+        setLive(false)
+      }
+    })()
   }, [])
 
   const deleteAccount = useCallback(async (password: string) => {
@@ -740,24 +749,34 @@ export default function AppProvider({ children }: { children: ReactNode }) {
     const uid = active.uid
     const db = getFirebaseDb()
 
+    try {
+      await withTimeout(
+        (async () => {
+          await Promise.allSettled([
+            deleteQueryDocs(query(collection(db, "resources"), where("authorId", "==", uid))),
+            deleteQueryDocs(query(collection(db, "posts"), where("authorId", "==", uid))),
+            deleteQueryDocs(query(collection(db, "saves"), where("userId", "==", uid))),
+            deleteQueryDocs(query(collection(db, "follows"), where("followerId", "==", uid))),
+            deleteQueryDocs(query(collection(db, "follows"), where("followeeId", "==", uid))),
+            deleteQueryDocs(query(collection(db, "events"), where("hostId", "==", uid))),
+            deleteQueryDocs(query(collection(db, "conversations"), where("participantIds", "array-contains", uid))),
+            deleteQueryDocs(query(collection(db, "messages"), where("participantIds", "array-contains", uid))),
+            deleteStorageFolder(`avatars/${uid}`),
+            deleteStorageFolder(`resources/${uid}`),
+          ])
+          await timedWrite(deleteDoc(doc(db, "educators", uid)))
+          await withTimeout(deleteUser(active), 12_000, "Could not delete your login. Please try again.")
+        })(),
+        20_000,
+        "Account deletion timed out. Please try again.",
+      )
+    } catch (error) {
+      return firebaseErrorMessage(error)
+    }
+
     clearCachedProfile(uid)
     setSessionProfile(null)
     setAuthUser(null)
-
-    void (async () => {
-      await Promise.allSettled([
-        deleteDoc(doc(db, "educators", uid)),
-        deleteUser(active),
-        deleteStorageFolder(`avatars/${uid}`),
-        deleteStorageFolder(`resources/${uid}`),
-        deleteQueryDocs(query(collection(db, "resources"), where("authorId", "==", uid))),
-        deleteQueryDocs(query(collection(db, "posts"), where("authorId", "==", uid))),
-        deleteQueryDocs(query(collection(db, "saves"), where("userId", "==", uid))),
-        deleteQueryDocs(query(collection(db, "follows"), where("followerId", "==", uid))),
-        deleteQueryDocs(query(collection(db, "events"), where("hostId", "==", uid))),
-      ])
-    })()
-
     return null
   }, [])
 

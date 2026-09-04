@@ -16,8 +16,18 @@ import UploadsView from "@/components/uploads-view"
 import { useApp } from "@/store"
 import type { AuthMode, View } from "@/types"
 
+function WorkspaceSplash() {
+  return (
+    <div className="grid min-h-full place-items-center bg-canvas text-ink">
+      <p className="font-mono text-[12px] uppercase tracking-[0.14em] text-muted">
+        Opening your workspace…
+      </p>
+    </div>
+  )
+}
+
 export default function App() {
-  const { currentUser, educatorById, live, signedIn } = useApp()
+  const { currentUser, educatorById, live, signedIn, ready } = useApp()
   const [view, setView] = useState<View>("dashboard")
   const [profileId, setProfileId] = useState<string | null>(null)
   const [messagePeer, setMessagePeer] = useState<string | null>(null)
@@ -34,7 +44,7 @@ export default function App() {
       setPhase("app")
       return
     }
-    if (phase !== "app") return
+    if (phase === "auth") return
     setPhase("landing")
     setGate("landing")
     setView("dashboard")
@@ -61,7 +71,24 @@ export default function App() {
     setGate("landing")
   }, [currentUser, gate, phase])
 
-  if (!signedIn && phase === "landing") {
+  if (!ready) return <WorkspaceSplash />
+
+  if (!signedIn) {
+    if (phase === "auth") {
+      return (
+        <>
+          <AuthScreen
+            mode={gate === "landing" ? "login" : gate}
+            onMode={setGate}
+            onBack={() => {
+              setGate("landing")
+              setPhase("landing")
+            }}
+          />
+          <ToastViewport />
+        </>
+      )
+    }
     return (
       <>
         <Landing
@@ -79,31 +106,7 @@ export default function App() {
     )
   }
 
-  if (!signedIn) {
-    return (
-      <>
-        <AuthScreen
-          mode={gate === "landing" ? "login" : gate}
-          onMode={setGate}
-          onBack={() => {
-            setGate("landing")
-            setPhase("landing")
-          }}
-        />
-        <ToastViewport />
-      </>
-    )
-  }
-
-  if (!currentUser) {
-    return (
-      <div className="grid min-h-full place-items-center bg-canvas text-ink">
-        <p className="font-mono text-[12px] uppercase tracking-[0.14em] text-muted">
-          Opening your workspace…
-        </p>
-      </div>
-    )
-  }
+  if (!currentUser) return <WorkspaceSplash />
 
   const user = currentUser
   const profile = educatorById(profileId ?? user.id) ?? user

@@ -79,8 +79,9 @@ export default function MeetupModal({ onClose }: { onClose: () => void }) {
           </div>
           <button
             type="button"
-            className="grid h-9 w-9 place-items-center rounded-lg text-ink"
+            className="grid h-9 w-9 place-items-center rounded-lg text-ink disabled:opacity-50"
             aria-label="Close"
+            disabled={busy}
             onClick={onClose}
           >
             <Icons.Close className="h-4 w-4" />

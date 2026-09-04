@@ -10,10 +10,12 @@ export default function SubjectPicker({
   value,
   onChange,
   id,
+  disabled = false,
 }: {
   value: Subject
   onChange: (subject: Subject) => void
   id?: string
+  disabled?: boolean
 }) {
   const generatedId = useId()
   const inputId = id ?? generatedId
@@ -58,8 +60,12 @@ export default function SubjectPicker({
         id={inputId}
         aria-haspopup="listbox"
         aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-        className={`flex h-11 w-full items-center justify-between gap-2 rounded-lg border px-3.5 text-left text-sm text-ink ${fieldFocus}`}
+        disabled={disabled}
+        onClick={() => {
+          if (disabled) return
+          setOpen((current) => !current)
+        }}
+        className={`flex h-11 w-full items-center justify-between gap-2 rounded-lg border px-3.5 text-left text-sm text-ink disabled:opacity-50 ${fieldFocus}`}
       >
         <span className="truncate">{value}</span>
         <Icons.Chevron className={`h-4 w-4 shrink-0 text-muted transition-transform ${open ? "rotate-180" : ""}`} />

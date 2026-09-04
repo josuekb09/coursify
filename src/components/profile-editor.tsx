@@ -207,6 +207,7 @@ export default function ProfileEditor({
             <SubjectPicker
               value={form.subject}
               onChange={(subject) => setForm({ ...form, subject })}
+              disabled={locked}
             />
           </div>
           <label className="block">

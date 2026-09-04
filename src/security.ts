@@ -7,10 +7,29 @@ const FREE_EMAIL_DOMAINS = new Set([
   "googlemail.com",
   "yahoo.com",
   "yahoo.co.uk",
+  "yahoo.fr",
+  "yahoo.de",
+  "yahoo.es",
+  "yahoo.it",
+  "yahoo.ca",
+  "yahoo.com.au",
+  "yahoo.co.za",
   "ymail.com",
   "outlook.com",
+  "outlook.fr",
+  "outlook.de",
+  "outlook.es",
+  "outlook.it",
+  "outlook.co.uk",
   "hotmail.com",
+  "hotmail.fr",
+  "hotmail.de",
+  "hotmail.es",
+  "hotmail.it",
+  "hotmail.co.uk",
   "live.com",
+  "live.fr",
+  "live.co.uk",
   "msn.com",
   "icloud.com",
   "me.com",
@@ -18,17 +37,36 @@ const FREE_EMAIL_DOMAINS = new Set([
   "aol.com",
   "proton.me",
   "protonmail.com",
+  "protonmail.ch",
+  "pm.me",
   "gmx.com",
   "gmx.net",
+  "gmx.fr",
   "mail.com",
   "zoho.com",
   "yandex.com",
   "yandex.ru",
   "inbox.com",
+  "mail.ru",
   "mailinator.com",
   "guerrillamail.com",
   "tutanota.com",
+  "tuta.io",
   "fastmail.com",
+  "hey.com",
+  "qq.com",
+  "163.com",
+  "126.com",
+  "orange.fr",
+  "wanadoo.fr",
+  "free.fr",
+  "sfr.fr",
+  "laposte.net",
+  "comcast.net",
+  "verizon.net",
+  "att.net",
+  "sky.com",
+  "btinternet.com",
 ])
 
 const INSTITUTIONAL_HINTS = [
@@ -126,10 +164,7 @@ export function professionalEmailError(email: string): string | null {
     return "Enter a valid professional email address."
   }
   if (isFreeEmailProvider(normalized)) {
-    return "Personal providers such as Gmail, Yahoo, and Outlook are not accepted. Use your school or institutional email."
-  }
-  if (!isInstitutionalEmail(normalized)) {
-    return "Use a high school or university email (.edu, .ac.za, .k12, or your school domain)."
+    return "Personal providers such as Gmail, Yahoo, and Outlook are not accepted. Use your school, university, or work email."
   }
   return null
 }
