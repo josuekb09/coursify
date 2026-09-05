@@ -100,7 +100,7 @@ export function firebaseErrorMessage(error: unknown, context?: "login" | "signup
     return "Email or password is incorrect."
   }
   if (code === "auth/weak-password") return "Password must be at least 8 characters."
-  if (code === "auth/invalid-email") return "Enter a valid professional email address."
+  if (code === "auth/invalid-email") return "Enter a valid email address."
   if (code === "auth/operation-not-allowed") {
     return "Email/password sign-in is not enabled in this Firebase project yet."
   }

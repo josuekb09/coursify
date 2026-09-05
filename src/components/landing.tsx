@@ -101,7 +101,7 @@ function Frame({
   const [failed, setFailed] = useState(false)
   return (
     <div
-      className={`overflow-hidden rounded-2xl border border-line bg-line shadow-[0_24px_48px_rgba(18,20,28,0.10)] ${className}`}
+      className={`overflow-hidden rounded-2xl border border-slate-200 bg-line shadow-xl ${className}`}
     >
       {failed ? (
         <div className="h-full min-h-[220px] w-full bg-navy-soft" role="img" aria-label={alt} />
@@ -204,7 +204,7 @@ function ContactForm() {
           onChange={(event) => setEmail(event.target.value)}
           className={field}
           autoComplete="email"
-          placeholder="you@school.edu"
+          placeholder="you@example.com"
         />
       </label>
       <label className="mt-4 block">
@@ -307,13 +307,13 @@ export default function Landing({
               </button>
             </div>
             <p className="mt-5 text-[13px] leading-6 text-muted">
-              Join with a school, university, or work email.
+              Join with any valid email address.
             </p>
           </div>
 
           <Frame
             src={photos.hero}
-            alt="Educators collaborating around a table in a bright campus workspace"
+            alt="Educators and learners collaborating in a library"
             className="aspect-[4/5] w-full sm:aspect-[5/6] lg:aspect-[4/5]"
             eager
           />

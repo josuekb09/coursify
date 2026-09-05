@@ -161,10 +161,7 @@ export function isInstitutionLevel(value: unknown): value is InstitutionLevel {
 export function professionalEmailError(email: string): string | null {
   const normalized = normalizeEmail(email)
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
-    return "Enter a valid professional email address."
-  }
-  if (isFreeEmailProvider(normalized)) {
-    return "Personal providers such as Gmail, Yahoo, and Outlook are not accepted. Use your school, university, or work email."
+    return "Enter a valid email address."
   }
   return null
 }

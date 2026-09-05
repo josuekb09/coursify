@@ -82,7 +82,7 @@ export default function AuthScreen({
           </h1>
           <p className="mt-5 text-[15px] leading-relaxed text-white/70">
             Coursify is a professional home for curriculum. High school and university educators
-            join with an institutional email and receive a Verified Educator badge.
+            can join with any valid email address.
           </p>
         </div>
         <p className="relative font-mono text-[11px] uppercase tracking-[0.14em] text-white/40">
@@ -109,12 +109,12 @@ export default function AuthScreen({
                 Sign In
               </h2>
               <p className="mt-2 text-sm leading-relaxed text-muted">
-                Use your institutional email to open your library and verified profile.
+                Use your email to open your library and profile.
               </p>
               <form className="mt-8 space-y-4" onSubmit={handleLogin}>
                 <label className="block">
                   <span className="mb-1.5 block font-mono text-[11px] uppercase tracking-[0.12em] text-muted">
-                    Professional email
+                    Email
                   </span>
                   <input
                     type="email"
@@ -122,7 +122,7 @@ export default function AuthScreen({
                     onChange={(event) => setLoginForm({ ...loginForm, email: event.target.value })}
                     className={field}
                     autoComplete="email"
-                    placeholder="you@school.edu"
+                    placeholder="you@example.com"
                   />
                 </label>
                 <label className="block">
@@ -173,7 +173,7 @@ export default function AuthScreen({
               </p>
               {!hasAccounts ? (
                 <p className="mt-3 text-xs text-muted">
-                  No educators have registered yet. Create an account with your school email.
+                  No educators have registered yet. Create an account with your email.
                 </p>
               ) : null}
             </>
@@ -201,7 +201,7 @@ export default function AuthScreen({
                 </label>
                 <label className="block">
                   <span className="mb-1.5 block font-mono text-[11px] uppercase tracking-[0.12em] text-muted">
-                    Professional email
+                    Email
                   </span>
                   <input
                     type="email"
@@ -209,7 +209,7 @@ export default function AuthScreen({
                     onChange={(event) => setSignupForm({ ...signupForm, email: event.target.value })}
                     className={field}
                     autoComplete="email"
-                    placeholder="you@school.edu"
+                    placeholder="you@example.com"
                   />
                 </label>
                 <div>
