@@ -12,7 +12,7 @@ const field =
   "h-11 w-full rounded-lg border border-line bg-canvas px-3.5 text-sm text-ink outline-none transition-[border-color,box-shadow] focus:border-navy focus:shadow-[0_0_0_4px_rgba(26,43,74,0.12)]"
 
 const photos = {
-  hero: encodeURI("/landing-images/picture 1.jpg"),
+  hero: encodeURI("/landing-images/hero-library.jpg"),
   workspace: encodeURI("/landing-images/picture 2.jpg"),
   meetups: encodeURI("/landing-images/picture 3.jpg"),
   mission: encodeURI("/landing-images/picture 4.jpg"),
