@@ -39,6 +39,7 @@ export type Educator = {
   badgeClaimed?: boolean
   institutionLevel: InstitutionLevel
   photoData?: string
+  lastActiveAt?: string
 }
 
 export type Slide = {

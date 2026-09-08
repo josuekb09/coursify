@@ -30,7 +30,9 @@ import type {
   Toast,
   UploadInput,
 } from "@/types"
-import { conversationIdFor, initialsFromName, isHttpUrl, kindLabel, uid } from "@/utils"
+import { conversationIdFor, initialsFromName, isEducatorOnline, isHttpUrl, kindLabel, uid } from "@/utils"
+import { playMessageChime } from "@/sound"
+import { dispatchOfflineEmailNotification } from "@/notifications"
 import {
   EmailAuthProvider,
   createUserWithEmailAndPassword,
@@ -72,6 +74,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react"
@@ -156,6 +159,7 @@ function toEducator(id: string, data: Record<string, unknown>): Educator {
     badgeClaimed: data.badgeClaimed === true,
     institutionLevel: isInstitutionLevel(data.institutionLevel) ? data.institutionLevel : "high-school",
     photoData: typeof data.photoData === "string" ? data.photoData : undefined,
+    lastActiveAt: typeof data.lastActiveAt === "string" ? data.lastActiveAt : undefined,
   }
 }
 
@@ -296,6 +300,7 @@ function educatorPayload(profile: Educator) {
     badgeClaimed: isFounderEmail(profile.email) || profile.badgeClaimed === true,
     institutionLevel: profile.institutionLevel,
     photoData,
+    lastActiveAt: profile.lastActiveAt,
     createdAt: new Date().toISOString(),
   })
 }
@@ -341,6 +346,7 @@ function mergeEducator(base: Educator | undefined, next: Educator): Educator {
     bio: next.bio.trim() ? next.bio : base.bio,
     photoData: next.photoData || base.photoData,
     storageBytes: next.storageBytes || base.storageBytes,
+    lastActiveAt: next.lastActiveAt || base.lastActiveAt,
   }
 }
 
@@ -441,6 +447,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
   const [hydratedFiles, setHydratedFiles] = useState<Record<string, string>>({})
   const [sessionProfile, setSessionProfile] = useState<Educator | null>(null)
+  const lastMessageCountRef = useRef<number>(0)
 
   const notify = useCallback((message: string) => {
     const id = uid("toast")
@@ -633,12 +640,23 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       onSnapshot(
         query(collection(db, "messages"), where("participantIds", "array-contains", authUser.uid)),
         (snap) => {
-          setMessages(
-            snap.docs
-              .map((item) => toMessage(item.id, asRecord(item.data())))
-              .filter((item): item is ChatMessage => item !== null)
-              .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1)),
-          )
+          const incoming = snap.docs
+            .map((item) => toMessage(item.id, asRecord(item.data())))
+            .filter((item): item is ChatMessage => item !== null)
+            .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))
+
+          // Play incoming chime if a new message from colleague arrived
+          if (lastMessageCountRef.current > 0 && incoming.length > lastMessageCountRef.current) {
+            const latest = incoming.at(-1)
+            if (latest && latest.senderId !== authUser.uid) {
+              const diffMs = Date.now() - new Date(latest.createdAt).getTime()
+              if (diffMs >= 0 && diffMs < 25_000) {
+                playMessageChime()
+              }
+            }
+          }
+          lastMessageCountRef.current = incoming.length
+          setMessages(incoming)
         },
         onListenError,
       ),
@@ -658,6 +676,63 @@ export default function AppProvider({ children }: { children: ReactNode }) {
 
     return () => stops.forEach((stop) => stop())
   }, [authUser?.uid])
+
+  // Maintain accurate online presence heartbeat
+  useEffect(() => {
+    if (!authUser?.uid || !isFirebaseConfigured()) return
+    const uid = authUser.uid
+    const db = getFirebaseDb()
+
+    let lastSent = 0
+    function sendHeartbeat(force = false) {
+      const now = Date.now()
+      if (!force && now - lastSent < 45_000) return
+      lastSent = now
+      void updateDoc(doc(db, "educators", uid), {
+        lastActiveAt: new Date().toISOString(),
+      }).catch(() => undefined)
+    }
+
+    sendHeartbeat(true)
+    const interval = window.setInterval(() => sendHeartbeat(true), 60_000)
+
+    const handleActivity = () => sendHeartbeat(false)
+    window.addEventListener("pointerdown", handleActivity, { passive: true })
+    window.addEventListener("keydown", handleActivity, { passive: true })
+    window.addEventListener("focus", () => sendHeartbeat(true))
+
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener("pointerdown", handleActivity)
+      window.removeEventListener("keydown", handleActivity)
+      window.removeEventListener("focus", () => sendHeartbeat(true))
+    }
+  }, [authUser?.uid])
+
+  // Automatically award badge when user meets merit criteria
+  useEffect(() => {
+    if (!authUser?.uid || !currentUser) return
+    if (currentUser.verified || currentUser.badgeClaimed) return
+    if (badgeEligible) {
+      void (async () => {
+        try {
+          await updateDoc(doc(getFirebaseDb(), "educators", authUser.uid), {
+            verified: true,
+            badgeClaimed: true,
+            badgeClaimedAt: new Date().toISOString(),
+          })
+          rememberProfile({
+            ...currentUser,
+            verified: true,
+            badgeClaimed: true,
+          })
+          notify("Congratulations! You've unlocked the Verified Educator Badge.")
+        } catch {
+          /* ignore */
+        }
+      })()
+    }
+  }, [authUser?.uid, badgeEligible, currentUser, notify])
 
   const login = useCallback(async (email: string, password: string) => {
     if (!isFirebaseConfigured()) {
@@ -1215,12 +1290,24 @@ export default function AppProvider({ children }: { children: ReactNode }) {
             }),
           ),
         )
+
+        // Automated email notification when recipient is offline
+        const recipient = educators.find((e) => e.id === peerId)
+        if (recipient && !isEducatorOnline(recipient.lastActiveAt)) {
+          void dispatchOfflineEmailNotification({
+            recipientEmail: recipient.email,
+            recipientName: recipient.name,
+            senderName: currentUser?.name || "A faculty colleague",
+            messageSnippet: previewText,
+          })
+        }
+
         return null
       } catch (error) {
         return firebaseErrorMessage(error)
       }
     },
-    [authUser],
+    [authUser, currentUser?.name, educators],
   )
 
   const markConversationRead = useCallback(

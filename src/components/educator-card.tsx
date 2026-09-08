@@ -4,7 +4,7 @@ import { institutionLabels } from "@/data"
 import { isFounderEmail } from "@/security"
 import { useApp } from "@/store"
 import type { Educator } from "@/types"
-import { followButtonLabel } from "@/utils"
+import { followButtonLabel, formatEducatorActivity, isEducatorOnline } from "@/utils"
 import { useState } from "react"
 
 export default function EducatorCard({
@@ -20,10 +20,13 @@ export default function EducatorCard({
   const [followBusy, setFollowBusy] = useState(false)
   const following = isFollowing(educator.id)
   const theyFollowYou = followsYou(educator.id)
+  const isMutual = following && theyFollowYou
   const isSelf = currentUser?.id === educator.id
   const followLabel = followButtonLabel(following, theyFollowYou)
   const isCreator = isFounderEmail(educator.email)
   const followers = followerCount(educator.id)
+  const online = isEducatorOnline(educator.lastActiveAt)
+  const activity = formatEducatorActivity(educator.lastActiveAt)
 
   return (
     <article className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-line bg-surface p-5 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-line-strong hover:shadow-md">
@@ -35,7 +38,14 @@ export default function EducatorCard({
         >
           <div className="relative shrink-0">
             <Avatar educator={educator} size={52} rounded="rounded-2xl" />
-            <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-surface bg-emerald-500" title="Active on Coursify" />
+            <span
+              className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-surface transition-colors ${
+                online
+                  ? "bg-emerald-500 shadow-[0_0_0_2px_rgba(16,185,129,0.25)]"
+                  : "bg-slate-300"
+              }`}
+              title={activity.label}
+            />
           </div>
 
           <div className="min-w-0 flex-1">
@@ -66,6 +76,11 @@ export default function EducatorCard({
               </span>
               <span className="text-muted/60">•</span>
               <span className="font-mono">{institutionLabels[educator.institutionLevel]}</span>
+              <span className="text-muted/60">•</span>
+              <span className={`inline-flex items-center gap-1 font-mono text-[10px] ${online ? "text-emerald-600 font-semibold" : "text-muted"}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${online ? "bg-emerald-500" : "bg-slate-400"}`} />
+                {activity.label}
+              </span>
             </div>
           </div>
         </button>
@@ -82,9 +97,18 @@ export default function EducatorCard({
           <span>
             <strong className="text-ink">{followers}</strong> {followers === 1 ? "colleague" : "colleagues"} following
           </span>
-          {theyFollowYou ? (
-            <span className="rounded bg-navy/5 px-1.5 py-0.5 text-[10px] font-semibold text-navy">
+          {isMutual ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 shadow-2xs">
+              <Icons.Users className="h-2.5 w-2.5" />
+              Mutual connection
+            </span>
+          ) : theyFollowYou ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-navy/5 border border-navy/15 px-2 py-0.5 text-[10px] font-semibold text-navy">
               Follows you
+            </span>
+          ) : following ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+              Following
             </span>
           ) : null}
         </div>

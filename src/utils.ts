@@ -243,3 +243,31 @@ export function deliverResource(resource: Resource, author: string) {
   )
   return "download" as const
 }
+
+export function isEducatorOnline(lastActiveAt?: string | null): boolean {
+  if (!lastActiveAt) return false
+  const diff = Date.now() - new Date(lastActiveAt).getTime()
+  return diff >= 0 && diff <= 2 * 60 * 1000 // Active in last 2 minutes
+}
+
+export function formatEducatorActivity(lastActiveAt?: string | null): { isOnline: boolean; label: string } {
+  if (!lastActiveAt) return { isOnline: false, label: "Offline" }
+  const diff = Date.now() - new Date(lastActiveAt).getTime()
+  if (diff >= 0 && diff <= 2 * 60 * 1000) {
+    return { isOnline: true, label: "Active now" }
+  }
+  const minutes = Math.floor(diff / 60_000)
+  if (minutes < 60) {
+    return { isOnline: false, label: `Active ${Math.max(1, minutes)}m ago` }
+  }
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) {
+    return { isOnline: false, label: `Active ${hours}h ago` }
+  }
+  const days = Math.floor(hours / 24)
+  if (days === 1) {
+    return { isOnline: false, label: "Active yesterday" }
+  }
+  return { isOnline: false, label: `Active ${days}d ago` }
+}
+

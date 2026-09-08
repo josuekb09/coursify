@@ -3,13 +3,84 @@ import Icons from "@/components/icons"
 import { isFounderEmail } from "@/security"
 import { useApp } from "@/store"
 import type { ChatAttachment } from "@/types"
-import { educatorMatchesQuery } from "@/utils"
+import { educatorMatchesQuery, formatEducatorActivity, isEducatorOnline } from "@/utils"
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react"
 
-const POPULAR_EMOJIS = [
-  "👍", "❤️", "👏", "😊", "🙌", "🔥", "✨", "🚀",
-  "📚", "🎓", "💡", "✍️", "🎯", "📖", "🧪", "📐",
-  "🤝", "💯", "💬", "📌", "🌟", "🏫", "📝", "✅",
+type EmojiCategory = {
+  id: string
+  name: string
+  icon: string
+  emojis: string[]
+}
+
+const EMOJI_CATEGORIES: EmojiCategory[] = [
+  {
+    id: "smileys",
+    name: "Smileys",
+    icon: "😀",
+    emojis: [
+      "😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "🙃", "😉", "😊", "😇",
+      "🥰", "😍", "🤩", "😘", "😗", "😚", "😋", "😛", "😜", "🤪", "😝", "🤗", "🤭",
+      "🤫", "🤔", "🤐", "🤨", "😐", "😑", "😶", "😏", "😒", "🙄", "😬", "🤥", "😌",
+      "😔", "😪", "🤤", "😴", "😷", "🤒", "🤕", "🤢", "🤮", "🤧", "🥵", "🥶", "🥴",
+      "😵", "🤯", "🤠", "🥳", "😎", "🤓", "🧐", "😕", "😟", "🙁", "😮", "😯", "😲",
+      "😳", "🥺", "😦", "😧", "😨", "😰", "😥", "😢", "😭", "😱", "😖", "😣", "😞",
+      "😓", "😩", "😫", "🥱", "😤", "😡", "😠", "🤬", "💀", "💩", "🤡", "👻",
+    ],
+  },
+  {
+    id: "people",
+    name: "People",
+    icon: "👋",
+    emojis: [
+      "👍", "👎", "👏", "🙌", "👐", "🤲", "🤝", "🤜", "🤛", "✊", "👊", "✌️", "🤞",
+      "🤟", "🤘", "👌", "🤌", "🤏", "👈", "👉", "👆", "👇", "☝️", "✋", "🤚", "🖐️",
+      "🖖", "👋", "🤙", "💪", "✍️", "🙏", "🧑‍🏫", "👩‍🏫", "👨‍🏫", "🧑‍🎓", "👩‍🎓", "👨‍🎓",
+      "🧑‍💻", "👩‍💻", "👨‍💻", "🧑‍🔬", "👩‍🔬", "👨‍🔬", "🙋", "🙋‍♂️", "🙋‍♀️", "🙇", "🙇‍♂️", "🙇‍♀️",
+    ],
+  },
+  {
+    id: "academic",
+    name: "Academic",
+    icon: "📚",
+    emojis: [
+      "📚", "📖", "📕", "📗", "📘", "📙", "📓", "📒", "📑", "🎓", "🏫", "🏛️", "💡",
+      "📝", "✏️", "📐", "📏", "🧪", "🔬", "🧬", "🔭", "💻", "🖥️", "⌨️", "🖱️", "📊",
+      "📈", "📉", "🗂️", "📁", "📂", "📋", "📌", "📍", "📎", "🖇️", "🔍", "🔎", "🔒",
+      "✉️", "📩", "📤", "📥", "📦", "🏷️", "📰", "🗞️", "📆", "📅", "🕒", "⏳",
+    ],
+  },
+  {
+    id: "symbols",
+    name: "Symbols",
+    icon: "❤️",
+    emojis: [
+      "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❣️", "💕", "💞",
+      "💓", "💗", "💖", "💘", "💝", "💯", "💢", "💬", "💭", "🗯️", "💡", "🔔", "🔕",
+      "⚠️", "⛔", "🚫", "✅", "❌", "❓", "❗", "💤", "🎵", "🎶", "🔊", "🔈", "⭐",
+      "✨", "💫", "🔥", "⚡", "💥", "🎯", "🛑", "🆗", "🆙", "🆒", "🆕", "🆓",
+    ],
+  },
+  {
+    id: "celebration",
+    name: "Celebration",
+    icon: "🎉",
+    emojis: [
+      "🎉", "🎊", "🎈", "🎁", "🎀", "🪄", "🏆", "🥇", "🥈", "🥉", "🏅", "🎖️", "🚀",
+      "🌟", "👑", "🎨", "🎬", "🎤", "🎧", "🎼", "🎹", "🥁", "🎷", "🎺", "🎸", "🎲",
+      "♟️", "🎳", "🎮", "🎪", "🎭", "🧵", "🧶", "🪅", "🔮", "✨", "🥂", "🍻",
+    ],
+  },
+  {
+    id: "daily",
+    name: "Daily",
+    icon: "☕",
+    emojis: [
+      "☕", "🍵", "🧃", "🥤", "🍎", "🍊", "🍋", "🍌", "🍉", "🍇", "🍓", "🍒", "🥑",
+      "🥪", "🥗", "🍕", "🍔", "🌱", "🌿", "☘️", "🍀", "🍃", "🍂", "🍁", "🍄", "💐",
+      "🌷", "🌹", "🌻", "🌞", "🌙", "🌎", "🪐", "🚲", "🚗", "✈️", "🏖️", "🏔️",
+    ],
+  },
 ]
 
 function formatChatSidebarTime(iso: string): string {
@@ -72,11 +143,13 @@ export default function MessagesView({
   const [attachment, setAttachment] = useState<ChatAttachment | null>(null)
   const [uploading, setUploading] = useState(false)
   const [emojiOpen, setEmojiOpen] = useState(false)
+  const [emojiCategory, setEmojiCategory] = useState<string>("smileys")
+  const [emojiSearch, setEmojiSearch] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
 
   const bottomRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const emojiPopoverRef = useRef<HTMLDivElement>(null)
 
@@ -115,6 +188,8 @@ export default function MessagesView({
 
   const peer = activePeer ? educatorById(activePeer) : undefined
   const isPeerCreator = peer ? isFounderEmail(peer.email) : false
+  const peerOnline = peer ? isEducatorOnline(peer.lastActiveAt) : false
+  const peerActivity = peer ? formatEducatorActivity(peer.lastActiveAt) : { isOnline: false, label: "Offline" }
   const conversationId = orderedConversations.find((item) => item.participantIds.includes(activePeer ?? ""))?.id
   const thread = conversationId ? messagesFor(conversationId) : []
 
@@ -144,15 +219,18 @@ export default function MessagesView({
       setDraft("")
       setAttachment(null)
       setEmojiOpen(false)
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto"
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send that message. Please try again.")
     } finally {
       setSending(false)
-      inputRef.current?.focus()
+      textareaRef.current?.focus()
     }
   }
 
-  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       void handleSend()
@@ -177,14 +255,23 @@ export default function MessagesView({
       setError(err instanceof Error ? err.message : "Could not attach file.")
     } finally {
       setUploading(false)
-      inputRef.current?.focus()
+      textareaRef.current?.focus()
     }
   }
 
   function handleInsertEmoji(emoji: string) {
     setDraft((prev) => prev + emoji)
-    inputRef.current?.focus()
+    textareaRef.current?.focus()
   }
+
+  const displayedEmojis = useMemo(() => {
+    if (emojiSearch.trim()) {
+      const all = EMOJI_CATEGORIES.flatMap((c) => c.emojis)
+      return Array.from(new Set(all))
+    }
+    const cat = EMOJI_CATEGORIES.find((c) => c.id === emojiCategory)
+    return cat ? cat.emojis : EMOJI_CATEGORIES[0].emojis
+  }, [emojiCategory, emojiSearch])
 
   const otherEducators = useMemo(() => {
     const pool = educators.filter((e) => e.id !== currentUser?.id)
@@ -273,6 +360,8 @@ export default function MessagesView({
               const isSelected = activePeer === other.id
               const isOtherCreator = isFounderEmail(other.email)
               const lastIsMine = last?.senderId === currentUser?.id
+              const otherOnline = isEducatorOnline(other.lastActiveAt)
+              const otherActivity = formatEducatorActivity(other.lastActiveAt)
 
               return (
                 <button
@@ -287,7 +376,14 @@ export default function MessagesView({
                 >
                   <div className="relative shrink-0">
                     <Avatar educator={other} size={42} rounded="rounded-xl" />
-                    <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-surface bg-emerald-500" />
+                    <span
+                      className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-surface transition-colors ${
+                        otherOnline
+                          ? "bg-emerald-500 shadow-[0_0_0_2px_rgba(16,185,129,0.25)]"
+                          : "bg-slate-300"
+                      }`}
+                      title={otherActivity.label}
+                    />
                   </div>
 
                   <div className="min-w-0 flex-1">
@@ -390,7 +486,14 @@ export default function MessagesView({
                   >
                     <div className="relative shrink-0">
                       <Avatar educator={peer} size={40} rounded="rounded-xl" />
-                      <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-surface bg-emerald-500" />
+                      <span
+                        className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-surface transition-colors ${
+                          peerOnline
+                            ? "bg-emerald-500 shadow-[0_0_0_2px_rgba(16,185,129,0.25)]"
+                            : "bg-slate-300"
+                        }`}
+                        title={peerActivity.label}
+                      />
                     </div>
 
                     <div className="min-w-0">
@@ -410,8 +513,13 @@ export default function MessagesView({
                           </span>
                         ) : null}
                       </div>
-                      <p className="truncate font-mono text-[11px] text-muted">
-                        {peer.school ? `${peer.school} · ` : ""}{peer.subject} · <span className="text-emerald-600 font-semibold">Active now</span>
+                      <p className="truncate font-mono text-[11px] text-muted flex items-center gap-1.5">
+                        <span className="truncate">{peer.school ? `${peer.school} · ` : ""}{peer.subject}</span>
+                        <span className="text-muted/60">•</span>
+                        <span className={`inline-flex items-center gap-1 ${peerOnline ? "font-semibold text-emerald-600" : "text-muted"}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${peerOnline ? "bg-emerald-500" : "bg-slate-400"}`} />
+                          {peerActivity.label}
+                        </span>
                       </p>
                     </div>
                   </button>
@@ -550,31 +658,73 @@ export default function MessagesView({
 
               {/* Chat Input Bar */}
               <div className="relative border-t border-line bg-surface p-3 sm:p-4">
-                {/* Emoji Picker Popover */}
+                {/* Complete Emoji Suite Drawer Popover */}
                 {emojiOpen ? (
                   <div
                     ref={emojiPopoverRef}
-                    className="absolute bottom-full left-4 mb-2 w-72 rounded-2xl border border-line bg-surface p-3 shadow-xl backdrop-blur-md z-30 animate-in fade-in slide-in-from-bottom-2 duration-150"
+                    className="absolute bottom-full left-2 sm:left-4 mb-2 w-[calc(100vw-2rem)] sm:w-96 max-w-sm rounded-2xl border border-line bg-surface/98 p-3 shadow-2xl backdrop-blur-md z-30 animate-in fade-in slide-in-from-bottom-2 duration-150"
                   >
-                    <div className="flex items-center justify-between border-b border-line pb-2 mb-2">
-                      <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-muted">
-                        Select Emoji
-                      </span>
+                    {/* Header with Search & Close */}
+                    <div className="flex items-center gap-2 border-b border-line pb-2.5 mb-2">
+                      <div className="relative flex-1">
+                        <Icons.Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted" />
+                        <input
+                          type="text"
+                          value={emojiSearch}
+                          onChange={(e) => setEmojiSearch(e.target.value)}
+                          placeholder="Search all emojis…"
+                          className="h-8 w-full rounded-xl border border-line bg-canvas/60 pl-8 pr-2 text-xs text-ink outline-none focus:border-navy"
+                        />
+                        {emojiSearch ? (
+                          <button
+                            type="button"
+                            onClick={() => setEmojiSearch("")}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-ink"
+                          >
+                            <Icons.Close className="h-3 w-3" />
+                          </button>
+                        ) : null}
+                      </div>
                       <button
                         type="button"
                         onClick={() => setEmojiOpen(false)}
-                        className="text-muted hover:text-ink"
+                        className="grid h-7 w-7 place-items-center rounded-lg text-muted hover:bg-black/5 hover:text-ink transition"
+                        aria-label="Close emoji picker"
                       >
                         <Icons.Close className="h-3.5 w-3.5" />
                       </button>
                     </div>
-                    <div className="grid grid-cols-8 gap-1 text-lg">
-                      {POPULAR_EMOJIS.map((emoji) => (
+
+                    {/* Category Selector Tabs */}
+                    {!emojiSearch.trim() ? (
+                      <div className="flex items-center gap-1 border-b border-line/60 pb-2 mb-2 overflow-x-auto">
+                        {EMOJI_CATEGORIES.map((cat) => (
+                          <button
+                            type="button"
+                            key={cat.id}
+                            onClick={() => setEmojiCategory(cat.id)}
+                            className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition ${
+                              emojiCategory === cat.id
+                                ? "bg-navy text-white shadow-2xs"
+                                : "text-muted hover:bg-canvas hover:text-ink"
+                            }`}
+                          >
+                            <span>{cat.icon}</span>
+                            <span>{cat.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {/* Emoji Grid */}
+                    <div className="grid grid-cols-8 gap-1 overflow-y-auto max-h-56 p-0.5 text-xl">
+                      {displayedEmojis.map((emoji, index) => (
                         <button
                           type="button"
-                          key={emoji}
+                          key={`${emoji}-${index}`}
                           onClick={() => handleInsertEmoji(emoji)}
-                          className="grid h-8 w-8 place-items-center rounded-lg hover:bg-canvas transition"
+                          className="grid h-9 w-9 place-items-center rounded-xl hover:bg-canvas hover:scale-110 active:scale-95 transition-transform"
+                          title={emoji}
                         >
                           {emoji}
                         </button>
@@ -592,12 +742,12 @@ export default function MessagesView({
                   accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.key,.txt,.zip"
                 />
 
-                <form onSubmit={handleSend} className="flex items-center gap-2">
+                <form onSubmit={handleSend} className="flex items-end gap-2">
                   {/* Emoji Trigger Button */}
                   <button
                     type="button"
                     onClick={() => setEmojiOpen((prev) => !prev)}
-                    className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl transition ${
+                    className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl transition ${
                       emojiOpen ? "bg-navy/10 text-navy" : "text-muted hover:bg-canvas hover:text-ink"
                     }`}
                     title="Insert emoji"
@@ -610,7 +760,7 @@ export default function MessagesView({
                     type="button"
                     disabled={uploading}
                     onClick={() => fileInputRef.current?.click()}
-                    className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-muted hover:bg-canvas hover:text-ink transition disabled:opacity-50"
+                    className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-muted hover:bg-canvas hover:text-ink transition disabled:opacity-50"
                     title="Attach document or media"
                   >
                     <Icons.Paperclip className="h-5 w-5" />
@@ -618,14 +768,25 @@ export default function MessagesView({
 
                   {/* Message Input with Keyboard Enter support */}
                   <div className="relative flex-1">
-                    <input
-                      ref={inputRef}
+                    <textarea
+                      ref={textareaRef}
+                      rows={1}
                       value={draft}
-                      onChange={(event) => setDraft(event.target.value)}
+                      onChange={(event) => {
+                        setDraft(event.target.value)
+                        if (textareaRef.current) {
+                          textareaRef.current.style.height = "auto"
+                          textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`
+                        }
+                      }}
                       onKeyDown={handleKeyDown}
                       disabled={sending}
-                      className="h-11 w-full rounded-2xl border border-line bg-canvas/80 px-4 text-sm text-ink outline-none transition placeholder:text-muted/70 hover:border-line-strong focus:border-navy focus:bg-surface focus:shadow-2xs disabled:opacity-60"
-                      placeholder={uploading ? "Uploading attachment…" : `Message ${peer.name}… (Press Enter to send)`}
+                      className="min-h-[44px] max-h-32 w-full resize-none rounded-2xl border border-line bg-canvas/80 px-4 py-2.5 text-sm text-ink outline-none transition placeholder:text-muted/70 hover:border-line-strong focus:border-navy focus:bg-surface focus:shadow-2xs disabled:opacity-60 leading-relaxed"
+                      placeholder={
+                        uploading
+                          ? "Uploading attachment…"
+                          : `Message ${peer.name}… (Enter to send, Shift+Enter for newline)`
+                      }
                     />
                   </div>
 

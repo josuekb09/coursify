@@ -184,7 +184,7 @@ export default function App() {
         onOpenMenu={() => setMenuOpen(true)}
       />
 
-      <VerifiedBadgeBanner />
+      <VerifiedBadgeBanner onViewProfile={() => goProfile(user.id)} />
 
       <div className="mx-auto flex max-w-[1440px]">
         <aside className="sticky top-16 hidden h-[calc(100vh-4rem)] w-[212px] shrink-0 overflow-y-auto border-r border-line px-4 py-6 lg:block">

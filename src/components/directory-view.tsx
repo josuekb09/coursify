@@ -36,7 +36,7 @@ export default function DirectoryView({
     if (query) setSearch(query)
   }, [query])
 
-  const hasSearchFilter = search.trim().length >= 2 || subject !== "All" || level !== "All"
+  const hasSearchFilter = search.trim().length >= 1 || subject !== "All" || level !== "All"
 
   const filtered = useMemo(() => {
     if (!hasSearchFilter) return []
@@ -51,14 +51,6 @@ export default function DirectoryView({
     })
     return rankEducatorSearchResults(matches, needle, currentUser?.id)
   }, [currentUser?.id, educators, hasSearchFilter, level, search, subject])
-
-  const topVerifiedEducators = useMemo(() => {
-    const verified = educators.filter(
-      (e) => (isFounderEmail(e.email) || e.verified || e.badgeClaimed) && e.id !== currentUser?.id,
-    )
-    if (verified.length > 0) return verified.slice(0, 6)
-    return educators.filter((e) => e.id !== currentUser?.id).slice(0, 6)
-  }, [currentUser?.id, educators])
 
   const disciplineCounts = useMemo(() => {
     const map: Record<string, number> = {}
@@ -76,7 +68,10 @@ export default function DirectoryView({
 
   function handlePickSubject(s: Subject) {
     setSubject(s)
-    if (!search) setSearch(s)
+  }
+
+  function handleQuickSearch(term: string) {
+    setSearch(term)
   }
 
   return (
@@ -245,40 +240,58 @@ export default function DirectoryView({
           )}
         </section>
       ) : (
-        /* Default Inspiring State: Curated Networking Hub */
-        <div className="mt-10 space-y-12">
-          {/* Top Verified Educators Section */}
-          {topVerifiedEducators.length > 0 ? (
-            <section>
-              <div className="flex items-end justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="grid h-6 w-6 place-items-center rounded-lg bg-sky-50 text-sky-600">
-                      <Icons.VerifiedSeal className="h-3.5 w-3.5" />
-                    </span>
-                    <h2 className="font-display text-lg font-bold text-ink">Top Verified Educators</h2>
-                  </div>
-                  <p className="mt-1 text-xs text-muted">
-                    Curriculum creators and verified faculty active on the platform.
-                  </p>
-                </div>
-                <span className="font-mono text-xs text-muted">
-                  {topVerifiedEducators.length} featured
+        /* Default Inspiring State: Clean Privacy-First Search Launchpad */
+        <div className="mt-10 space-y-10">
+          {/* Search Guidance Card */}
+          <section className="relative overflow-hidden rounded-3xl border border-line bg-gradient-to-br from-surface via-surface to-canvas p-6 sm:p-10 shadow-sm">
+            <div className="max-w-2xl">
+              <div className="flex items-center gap-2.5">
+                <span className="grid h-10 w-10 place-items-center rounded-2xl bg-navy text-white shadow-sm">
+                  <Icons.Search className="h-5 w-5" />
+                </span>
+                <span className="font-mono text-xs font-bold uppercase tracking-wider text-navy">
+                  Privacy-First Faculty Search
                 </span>
               </div>
 
-              <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {topVerifiedEducators.map((educator) => (
-                  <EducatorCard
-                    key={educator.id}
-                    educator={educator}
-                    onProfile={onAuthor}
-                    onMessage={onMessage}
-                  />
-                ))}
+              <h2 className="mt-4 font-display text-xl font-bold tracking-tight text-ink sm:text-2xl">
+                Find and connect with educators worldwide
+              </h2>
+
+              <p className="mt-2 text-sm leading-relaxed text-muted">
+                To protect faculty privacy and prevent unsolicited web scraping, member directories are shielded by default. Enter an educator&apos;s full name, school or university, or academic field in the search bar above to view matching profiles.
+              </p>
+
+              {/* Quick Search Suggestions */}
+              <div className="mt-6">
+                <p className="font-mono text-[11px] font-semibold text-muted uppercase tracking-wider">
+                  Suggested Search Queries:
+                </p>
+                <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                  {[
+                    "Computer Science & IT",
+                    "Mathematics",
+                    "Physics",
+                    "Biology",
+                    "Literature & Language Arts",
+                    "Economics & Business",
+                    "University",
+                    "High School",
+                  ].map((chip) => (
+                    <button
+                      type="button"
+                      key={chip}
+                      onClick={() => handleQuickSearch(chip)}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-canvas/70 px-3 py-1.5 text-xs font-medium text-ink transition hover:border-navy hover:bg-surface hover:text-navy active:scale-98"
+                    >
+                      <Icons.Search className="h-3 w-3 opacity-60" />
+                      <span>{chip}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </section>
-          ) : null}
+            </div>
+          </section>
 
           {/* Trending Academic Disciplines Grid */}
           <section>
