@@ -13,6 +13,7 @@ const iconMap = {
   Users: Icons.Users,
   Message: Icons.Message,
   Calendar: Icons.Calendar,
+  Trend: Icons.Trend,
 }
 
 export default function Sidebar({
@@ -26,7 +27,7 @@ export default function Sidebar({
   onNavigate: (next: View) => void
   onClose?: () => void
 }) {
-  const { currentUser, logout, unreadCount, followBackSuggestions } = useApp()
+  const { currentUser, isFounder, logout, unreadCount, followBackSuggestions } = useApp()
   const used = currentUser?.storageBytes ?? 0
   const percent = Math.min(100, Math.round((used / STORAGE_CAP_BYTES) * 100))
   const unread = unreadCount
@@ -52,7 +53,7 @@ export default function Sidebar({
         Menu
       </p>
       <nav className="flex flex-col gap-0.5">
-        {nav.map((item) => {
+        {nav.filter((item) => item.view !== "admin" || isFounder).map((item) => {
           const Icon = iconMap[item.icon]
           const on = view === item.view
           return (

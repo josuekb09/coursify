@@ -1,7 +1,9 @@
 import type { Subject } from "@/types"
 
 export const STORAGE_CAP_BYTES = 10_000_000_000
-export const MAX_FILE_BYTES = 4_000_000
+// Keep this aligned with the Firebase Storage rule. 50 MiB is large enough for
+// classroom PDFs and slide decks without permitting unbounded uploads.
+export const MAX_FILE_BYTES = 50 * 1024 * 1024
 
 export const nav = [
   { label: "Feed" as const, view: "dashboard" as const, icon: "Grid" as const },
@@ -11,6 +13,7 @@ export const nav = [
   { label: "My Uploads" as const, view: "uploads" as const, icon: "Upload" as const },
   { label: "Saved" as const, view: "saved" as const, icon: "Bookmark" as const },
   { label: "Subjects" as const, view: "subjects" as const, icon: "Layers" as const },
+  { label: "Admin analytics" as const, view: "admin" as const, icon: "Trend" as const },
 ]
 
 export const subjectOptions: Subject[] = [
@@ -27,6 +30,33 @@ export const subjectOptions: Subject[] = [
   "Music",
   "Physical Education",
   "Foreign Languages",
+  "Accounting",
+  "Agricultural Sciences",
+  "Anthropology",
+  "Architecture",
+  "Astronomy",
+  "Business Studies",
+  "Civics & Social Studies",
+  "Communication & Media Studies",
+  "Computer Engineering",
+  "Creative Writing",
+  "Drama & Theatre",
+  "Earth & Environmental Science",
+  "Engineering",
+  "Film Studies",
+  "Health Sciences",
+  "Law",
+  "Library & Information Science",
+  "Linguistics",
+  "Marketing",
+  "Medicine & Nursing",
+  "Philosophy",
+  "Political Science",
+  "Psychology",
+  "Religious Studies",
+  "Sociology",
+  "Statistics",
+  "Technology & Design",
 ]
 
 export const subjects = ["All", ...subjectOptions] as const
@@ -36,9 +66,9 @@ export function isSubject(value: string): value is Subject {
 }
 
 export function normalizeSubject(value: string): Subject {
+  const subject = value.replace(/\s+/g, " ").trim().slice(0, 100)
   if (value === "Literature") return "Literature & Language Arts"
-  if (isSubject(value)) return value
-  return "Mathematics"
+  return subject || "Mathematics"
 }
 
 export const grades = [

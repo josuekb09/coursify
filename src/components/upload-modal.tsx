@@ -1,7 +1,7 @@
 import FormatMark from "@/components/format-mark"
 import Icons from "@/components/icons"
 import SubjectPicker from "@/components/subject-picker"
-import { grades } from "@/data"
+import { grades, MAX_FILE_BYTES } from "@/data"
 import {
   FORMAT_META,
   FORMAT_ORDER,
@@ -25,6 +25,7 @@ export default function UploadModal({ onClose }: { onClose: () => void }) {
   const { uploadResource, notify } = useApp()
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState<number | null>(null)
   const [form, setForm] = useState<UploadInput>({
     title: "",
     subject: "Mathematics",
@@ -47,8 +48,9 @@ export default function UploadModal({ onClose }: { onClose: () => void }) {
     if (busy) return
     setBusy(true)
     setError(null)
+    setProgress(form.file ? 0 : null)
     try {
-      const result = await uploadResource(form)
+      const result = await uploadResource(form, setProgress)
       if (result) {
         setError(result)
         notify(result)
@@ -61,6 +63,7 @@ export default function UploadModal({ onClose }: { onClose: () => void }) {
       notify(message)
     } finally {
       setBusy(false)
+      setProgress(null)
     }
   }
 
@@ -198,7 +201,9 @@ export default function UploadModal({ onClose }: { onClose: () => void }) {
               className="w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-navy file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white"
             />
             <p className="mt-1.5 font-mono text-[11px] text-muted">
-              {form.file ? form.file.name : "Optional if you provide a link. Max 4 MB."}
+              {form.file
+                ? `${form.file.name} · ${(form.file.size / 1_048_576).toFixed(1)} MB`
+                : `Optional if you provide a link. Max ${Math.round(MAX_FILE_BYTES / 1_048_576)} MB.`}
             </p>
           </label>
 
@@ -220,6 +225,24 @@ export default function UploadModal({ onClose }: { onClose: () => void }) {
           </label>
 
           {error ? <p className="text-sm text-[#8a3b32]">{error}</p> : null}
+          {progress !== null ? (
+            <div aria-live="polite" className="space-y-1.5 pt-1">
+              <div className="flex justify-between font-mono text-[11px] text-muted">
+                <span>
+                  {progress < 100
+                    ? "Uploading resource to cloud storage…"
+                    : "Finalizing resource and updating library…"}
+                </span>
+                <span className="font-semibold text-navy">{progress}%</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-line">
+                <div
+                  className="h-full rounded-full bg-navy transition-all duration-200"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div className="flex justify-end gap-2 border-t border-line px-5 py-4">
@@ -237,7 +260,7 @@ export default function UploadModal({ onClose }: { onClose: () => void }) {
             className="inline-flex items-center gap-2 rounded-lg bg-navy px-3.5 py-2 text-sm font-semibold text-white hover:bg-navy-hover disabled:opacity-60"
           >
             <Icons.Upload className="h-4 w-4" />
-            {busy ? "Saving…" : "Save to library"}
+            {busy ? (progress !== null ? `Uploading ${progress}%` : "Saving…") : "Save to library"}
           </button>
         </div>
       </form>

@@ -6,6 +6,7 @@ export type View =
   | "uploads"
   | "saved"
   | "subjects"
+  | "admin"
   | "profile"
 
 export type EventFormat = "in-person" | "online"
@@ -20,20 +21,8 @@ export type ResourceFormat = "video" | "slides" | "document" | "spreadsheet" | "
 
 export type InstitutionLevel = "high-school" | "university"
 
-export type Subject =
-  | "Mathematics"
-  | "Physics"
-  | "Chemistry"
-  | "Biology"
-  | "History"
-  | "Geography"
-  | "Literature & Language Arts"
-  | "Computer Science & IT"
-  | "Economics & Business"
-  | "Art & Design"
-  | "Music"
-  | "Physical Education"
-  | "Foreign Languages"
+// Subject remains a string to support a teacher's custom curriculum area.
+export type Subject = string
 
 export type Educator = {
   id: string
@@ -44,8 +33,10 @@ export type Educator = {
   subject: Subject
   bio: string
   joinedYear: number
+  createdAt: string
   storageBytes: number
   verified: boolean
+  badgeClaimed?: boolean
   institutionLevel: InstitutionLevel
   photoData?: string
 }
@@ -96,12 +87,24 @@ export type Conversation = {
   lastReadAt: Record<string, string>
 }
 
+export type ChatAttachment = {
+  url: string
+  name: string
+  type: string
+  size?: string
+}
+
 export type ChatMessage = {
   id: string
   conversationId: string
   senderId: string
   body: string
   createdAt: string
+  attachmentUrl?: string
+  attachmentName?: string
+  attachmentType?: string
+  attachmentSize?: string
+  status?: "sent" | "delivered" | "read"
 }
 
 export type SignupInput = {

@@ -10,12 +10,14 @@ import {
 } from "@/firebase"
 import {
   inferInstitutionLevel,
+  isFounderEmail,
   isInstitutionLevel,
   professionalEmailError,
   sanitizePlainText,
   normalizeEmail,
 } from "@/security"
 import type {
+  ChatAttachment,
   ChatMessage,
   Conversation,
   Educator,
@@ -57,7 +59,13 @@ import {
   where,
   type Query,
 } from "firebase/firestore"
-import { deleteObject, getDownloadURL, listAll, ref as storageRef, uploadBytes } from "firebase/storage"
+import {
+  deleteObject,
+  getDownloadURL,
+  listAll,
+  ref as storageRef,
+  uploadBytesResumable,
+} from "firebase/storage"
 import {
   createContext,
   useCallback,
@@ -78,6 +86,8 @@ type AppStore = {
   messages: ChatMessage[]
   events: Meetup[]
   currentUser: Educator | null
+  isFounder: boolean
+  badgeEligible: boolean
   signedIn: boolean
   hasAccounts: boolean
   myResources: Resource[]
@@ -92,7 +102,8 @@ type AppStore = {
   logout: () => void
   deleteAccount: (password: string) => Promise<string | null>
   updateProfile: (patch: ProfilePatch) => Promise<string | null>
-  uploadResource: (input: UploadInput) => Promise<string | null>
+  claimVerifiedBadge: () => Promise<string | null>
+  uploadResource: (input: UploadInput, onProgress?: (progress: number) => void) => Promise<string | null>
   deleteResource: (id: string) => void
   downloadResource: (id: string) => Promise<Resource | undefined>
   hydrateResource: (id: string) => Promise<Resource | undefined>
@@ -105,7 +116,8 @@ type AppStore = {
   followerCount: (educatorId: string) => number
   followingCount: (educatorId: string) => number
   publishPost: (body: string, resourceId?: string) => Promise<string | null>
-  sendMessage: (peerId: string, body: string) => Promise<string | null>
+  sendMessage: (peerId: string, body: string, attachment?: ChatAttachment) => Promise<string | null>
+  uploadChatAttachment: (file: File) => Promise<ChatAttachment>
   markConversationRead: (conversationId: string) => void
   conversationWith: (peerId: string) => Conversation | undefined
   messagesFor: (conversationId: string) => ChatMessage[]
@@ -138,8 +150,10 @@ function toEducator(id: string, data: Record<string, unknown>): Educator {
     subject: normalizeSubject(String(data.subject ?? "Mathematics")),
     bio: String(data.bio ?? ""),
     joinedYear: Number(data.joinedYear) || new Date().getFullYear(),
+    createdAt: String(data.createdAt ?? new Date().toISOString()),
     storageBytes: Number(data.storageBytes) || 0,
-    verified: data.verified === true,
+    verified: isFounderEmail(String(data.email ?? "")) || data.badgeClaimed === true,
+    badgeClaimed: data.badgeClaimed === true,
     institutionLevel: isInstitutionLevel(data.institutionLevel) ? data.institutionLevel : "high-school",
     photoData: typeof data.photoData === "string" ? data.photoData : undefined,
   }
@@ -201,13 +215,19 @@ function toConversation(id: string, data: Record<string, unknown>): Conversation
 
 function toMessage(id: string, data: Record<string, unknown>): ChatMessage | null {
   const body = String(data.body ?? "").trim()
-  if (!body || !data.senderId || !data.conversationId) return null
+  if (!body && !data.attachmentUrl) return null
+  if (!data.senderId || !data.conversationId) return null
   return {
     id,
     conversationId: String(data.conversationId),
     senderId: String(data.senderId),
-    body,
+    body: body || (typeof data.attachmentName === "string" ? `Shared ${data.attachmentName}` : "Shared an attachment"),
     createdAt: String(data.createdAt ?? new Date().toISOString()),
+    attachmentUrl: typeof data.attachmentUrl === "string" ? data.attachmentUrl : undefined,
+    attachmentName: typeof data.attachmentName === "string" ? data.attachmentName : undefined,
+    attachmentType: typeof data.attachmentType === "string" ? data.attachmentType : undefined,
+    attachmentSize: typeof data.attachmentSize === "string" ? data.attachmentSize : undefined,
+    status: (data.status as "sent" | "delivered" | "read") || "delivered",
   }
 }
 
@@ -244,8 +264,10 @@ function educatorStub(user: User, extras?: Partial<Educator>): Educator {
     subject: extras?.subject ?? "Mathematics",
     bio: extras?.bio ?? "",
     joinedYear: extras?.joinedYear ?? new Date().getFullYear(),
+    createdAt: extras?.createdAt ?? new Date().toISOString(),
     storageBytes: extras?.storageBytes ?? 0,
-    verified: extras?.verified ?? true,
+    verified: isFounderEmail(email) || extras?.badgeClaimed === true,
+    badgeClaimed: isFounderEmail(email) || extras?.badgeClaimed === true,
     institutionLevel:
       extras?.institutionLevel ?? inferInstitutionLevel(email, extras?.school ?? ""),
     photoData: extras?.photoData,
@@ -270,7 +292,8 @@ function educatorPayload(profile: Educator) {
     bio: profile.bio,
     joinedYear: profile.joinedYear,
     storageBytes: profile.storageBytes,
-    verified: profile.verified,
+    verified: isFounderEmail(profile.email) || profile.badgeClaimed === true || profile.verified === true,
+    badgeClaimed: isFounderEmail(profile.email) || profile.badgeClaimed === true,
     institutionLevel: profile.institutionLevel,
     photoData,
     createdAt: new Date().toISOString(),
@@ -432,6 +455,15 @@ export default function AppProvider({ children }: { children: ReactNode }) {
     return educators.find((educator) => educator.id === authUser.uid) ?? sessionProfile
   }, [authUser, educators, sessionProfile])
   const signedIn = Boolean(authUser)
+  const isFounder = isFounderEmail(currentUser?.email ?? authUser?.email ?? "")
+  const badgeEligible = Boolean(
+    currentUser &&
+      !currentUser.verified &&
+      currentUser.bio.trim() &&
+      currentUser.school.trim() &&
+      currentUser.subject.trim() &&
+      resources.filter((resource) => resource.authorId === currentUser.id).length >= 3,
+  )
 
   function rememberProfile(profile: Educator) {
     setSessionProfile((current) => mergeEducator(current ?? undefined, profile))
@@ -694,7 +726,8 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       bio,
       joinedYear: new Date().getFullYear(),
       storageBytes: 0,
-      verified: true,
+      verified: isFounderEmail(email),
+      badgeClaimed: isFounderEmail(email),
       institutionLevel: isInstitutionLevel(input.institutionLevel)
         ? input.institutionLevel
         : inferInstitutionLevel(email, school),
@@ -837,35 +870,69 @@ export default function AppProvider({ children }: { children: ReactNode }) {
     [authUser, currentUser, notify],
   )
 
+  const claimVerifiedBadge = useCallback(async () => {
+    if (!authUser || !currentUser) return "Sign in to claim a badge."
+    const eligible =
+      isFounderEmail(currentUser.email) ||
+      (Boolean(currentUser.bio.trim()) &&
+        Boolean(currentUser.school.trim()) &&
+        Boolean(currentUser.subject.trim()) &&
+        resources.filter((resource) => resource.authorId === currentUser.id).length >= 3)
+    if (!eligible) return "Complete your profile and share three resources before claiming this badge."
+    try {
+      await timedWrite(
+        updateDoc(doc(getFirebaseDb(), "educators", authUser.uid), {
+          verified: true,
+          badgeClaimed: true,
+          badgeClaimedAt: new Date().toISOString(),
+        }),
+        "Could not claim your badge. Please try again.",
+      )
+      rememberProfile({
+        ...currentUser,
+        verified: true,
+        badgeClaimed: true,
+      })
+      notify("Verified Educator badge claimed — congratulations!")
+      return null
+    } catch (error) {
+      return firebaseErrorMessage(error)
+    }
+  }, [authUser, currentUser, notify, resources])
+
   const uploadResource = useCallback(
-    async (input: UploadInput) => {
+    async (input: UploadInput, onProgress?: (progress: number) => void) => {
       if (!authUser || !currentUser) return "Sign in to upload."
       const title = sanitizePlainText(input.title, 160)
       if (!title) return "Give the resource a title."
       const issue = uploadIssue({ ...input, sourceUrl: input.sourceUrl ?? "" })
       if (issue) return issue
       if (input.file && input.file.size > MAX_FILE_BYTES) {
-        return "Please keep uploads under 4 MB for this workspace."
+        return `Please keep uploads at or below ${Math.round(MAX_FILE_BYTES / 1_048_576)} MB.`
       }
       const size = input.file?.size ?? 0
       if (currentUser.storageBytes + size > STORAGE_CAP_BYTES) {
         return "Not enough storage for this file."
       }
+      let storagePath: string | undefined
       try {
         const resourceId = uid("res")
         let fileUrl: string | undefined
-        let storagePath: string | undefined
         if (input.file) {
-          storagePath = `resources/${authUser.uid}/${resourceId}/${input.file.name}`
+          const fileName = input.file.name.replace(/[\\/#?\[\]]/g, "_")
+          storagePath = `resources/${authUser.uid}/${resourceId}/${fileName}`
           const fileRef = storageRef(getFirebaseStorage(), storagePath)
-          await withTimeout(
-            uploadBytes(fileRef, input.file),
-            15_000,
-            "The file upload timed out. Try a smaller file or a link instead.",
-          )
+          const task = uploadBytesResumable(fileRef, input.file, {
+            contentType: input.file.type || "application/octet-stream",
+          })
+          task.on("state_changed", (snapshot) => {
+            const total = snapshot.totalBytes || input.file?.size || 1
+            onProgress?.(Math.round((snapshot.bytesTransferred / total) * 100))
+          })
+          await task
           fileUrl = await withTimeout(
             getDownloadURL(fileRef),
-            10_000,
+            45_000,
             "Could not finish saving that file. Please try again.",
           )
         }
@@ -907,6 +974,9 @@ export default function AppProvider({ children }: { children: ReactNode }) {
         notify(`${title} was added to your library.`)
         return null
       } catch (error) {
+        if (storagePath) {
+          await deleteObject(storageRef(getFirebaseStorage(), storagePath)).catch(() => undefined)
+        }
         return firebaseErrorMessage(error)
       }
     },
@@ -1073,15 +1143,44 @@ export default function AppProvider({ children }: { children: ReactNode }) {
     [authUser, notify],
   )
 
+  const uploadChatAttachment = useCallback(
+    async (file: File): Promise<ChatAttachment> => {
+      if (!authUser) throw new Error("Sign in to send attachments.")
+      if (file.size > 25 * 1024 * 1024) {
+        throw new Error("Chat attachments must be 25MB or less.")
+      }
+      const fileId = uid("att")
+      const safeName = file.name.replace(/[\\/#?\[\]]/g, "_")
+      const storagePath = `resources/${authUser.uid}/chat/${fileId}_${safeName}`
+      const fileRef = storageRef(getFirebaseStorage(), storagePath)
+      await uploadBytesResumable(fileRef, file, {
+        contentType: file.type || "application/octet-stream",
+      })
+      const url = await withTimeout(
+        getDownloadURL(fileRef),
+        30_000,
+        "Attachment upload timed out. Please try again.",
+      )
+      return {
+        url,
+        name: file.name,
+        type: file.type || "application/octet-stream",
+        size: `${(file.size / 1_048_576).toFixed(1)} MB`,
+      }
+    },
+    [authUser],
+  )
+
   const sendMessage = useCallback(
-    async (peerId: string, body: string) => {
+    async (peerId: string, body: string, attachment?: ChatAttachment) => {
       if (!authUser) return "Sign in to send a message."
       if (peerId === authUser.uid) return "You cannot message yourself."
       const text = sanitizePlainText(body, 2000)
-      if (!text) return "Write a message first."
+      if (!text && !attachment) return "Write a message or attach a file first."
       const now = new Date().toISOString()
       const conversationId = conversationIdFor(authUser.uid, peerId)
       const participantIds = [authUser.uid, peerId].sort()
+      const previewText = text || (attachment ? `Shared ${attachment.name}` : "Shared an attachment")
       try {
         await timedWrite(
           setDoc(
@@ -1089,7 +1188,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
             {
               participantIds,
               updatedAt: now,
-              lastMessage: text,
+              lastMessage: previewText,
             },
             { merge: true },
           ),
@@ -1100,13 +1199,21 @@ export default function AppProvider({ children }: { children: ReactNode }) {
           }),
         )
         await timedWrite(
-          addDoc(collection(getFirebaseDb(), "messages"), {
-            conversationId,
-            senderId: authUser.uid,
-            body: text,
-            createdAt: now,
-            participantIds,
-          }),
+          addDoc(
+            collection(getFirebaseDb(), "messages"),
+            compact({
+              conversationId,
+              senderId: authUser.uid,
+              body: text || (attachment ? `Shared ${attachment.name}` : ""),
+              createdAt: now,
+              participantIds,
+              attachmentUrl: attachment?.url,
+              attachmentName: attachment?.name,
+              attachmentType: attachment?.type,
+              attachmentSize: attachment?.size,
+              status: "delivered",
+            }),
+          ),
         )
         return null
       } catch (error) {
@@ -1286,6 +1393,8 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       messages,
       events,
       currentUser,
+      isFounder,
+      badgeEligible,
       signedIn,
       hasAccounts,
       myResources,
@@ -1300,6 +1409,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       logout,
       deleteAccount,
       updateProfile,
+      claimVerifiedBadge,
       uploadResource,
       deleteResource,
       downloadResource,
@@ -1314,6 +1424,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       followingCount,
       publishPost,
       sendMessage,
+      uploadChatAttachment,
       markConversationRead,
       conversationWith,
       messagesFor,
@@ -1331,6 +1442,8 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       conversations,
       createMeetup,
       currentUser,
+      isFounder,
+      badgeEligible,
       deleteAccount,
       deleteMeetup,
       deleteResource,
@@ -1361,6 +1474,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       resourcesWithFiles,
       savedResources,
       sendMessage,
+      uploadChatAttachment,
       signedIn,
       signup,
       toasts,
@@ -1370,6 +1484,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       unreadCount,
       unreadIn,
       updateProfile,
+      claimVerifiedBadge,
       uploadResource,
     ],
   )

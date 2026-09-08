@@ -183,8 +183,7 @@ export default function AuthScreen({
                 Create Educator Account
               </h2>
               <p className="mt-2 text-sm leading-relaxed text-muted">
-                Register with a high school or university email. You will complete your profile
-                after signing up.
+                Register with any valid email address. You will complete your profile after signing up.
               </p>
               <form className="mt-8 space-y-4" onSubmit={handleSignup}>
                 <label className="block">

@@ -5,14 +5,33 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isFounder() {
+      return signedIn() && request.auth.token.email == 'kabuyaentambwe03@gmail.com';
+    }
+
     match /meta/{document} {
       allow read: if true;
-      allow write: if signedIn();
+      allow write: if isFounder();
     }
 
     match /educators/{userId} {
       allow read: if signedIn();
-      allow create, update: if signedIn() && request.auth.uid == userId;
+      allow create: if signedIn() && request.auth.uid == userId
+        && request.resource.data.email == request.auth.token.email
+        && (request.resource.data.verified == false || isFounder());
+      allow update: if signedIn() && request.auth.uid == userId
+        && request.resource.data.email == resource.data.email
+        && (
+          request.resource.data.verified == resource.data.verified
+          || isFounder()
+          || (
+            resource.data.verified == false
+            && request.resource.data.verified == true
+            && request.resource.data.badgeClaimed == true
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['verified', 'badgeClaimed', 'badgeClaimedAt'])
+          )
+        );
       allow delete: if signedIn() && request.auth.uid == userId;
     }
 

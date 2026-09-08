@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import AdminAnalyticsView from "@/components/admin-analytics-view"
 import AuthScreen from "@/components/auth-screen"
 import Dashboard from "@/components/dashboard"
 import DirectoryView from "@/components/directory-view"
@@ -13,6 +14,7 @@ import SubjectsView from "@/components/subjects-view"
 import ToastViewport from "@/components/toast-viewport"
 import UploadModal from "@/components/upload-modal"
 import UploadsView from "@/components/uploads-view"
+import VerifiedBadgeBanner from "@/components/verified-badge-banner"
 import { useApp } from "@/store"
 import type { AuthMode, View } from "@/types"
 
@@ -27,7 +29,7 @@ function WorkspaceSplash() {
 }
 
 export default function App() {
-  const { currentUser, educatorById, live, signedIn, ready } = useApp()
+  const { currentUser, educatorById, isFounder, live, signedIn, ready } = useApp()
   const [view, setView] = useState<View>("dashboard")
   const [profileId, setProfileId] = useState<string | null>(null)
   const [messagePeer, setMessagePeer] = useState<string | null>(null)
@@ -145,6 +147,10 @@ export default function App() {
   }
 
   function goNav(next: View) {
+    if (next === "admin" && !isFounder) {
+      setView("dashboard")
+      return
+    }
     if (next === "profile") {
       goProfile(user.id)
       return
@@ -178,6 +184,8 @@ export default function App() {
         onOpenMenu={() => setMenuOpen(true)}
       />
 
+      <VerifiedBadgeBanner />
+
       <div className="mx-auto flex max-w-[1440px]">
         <aside className="sticky top-16 hidden h-[calc(100vh-4rem)] w-[212px] shrink-0 overflow-y-auto border-r border-line px-4 py-6 lg:block">
           <Sidebar view={view} onNavigate={goNav} />
@@ -202,6 +210,7 @@ export default function App() {
         {view === "uploads" ? <UploadsView query={query} onAuthor={goProfile} /> : null}
         {view === "saved" ? <SavedView query={query} onAuthor={goProfile} /> : null}
         {view === "subjects" ? <SubjectsView query={query} onAuthor={goProfile} /> : null}
+        {view === "admin" && isFounder ? <AdminAnalyticsView /> : null}
         {view === "profile" ? (
           <Profile
             educator={profile}

@@ -2,6 +2,12 @@ import type { InstitutionLevel, Subject } from "@/types"
 import { isSubject, normalizeSubject } from "@/data"
 import { initialsFromName } from "@/utils"
 
+export const FOUNDER_EMAIL = "kabuyaentambwe03@gmail.com"
+
+export function isFounderEmail(email: string) {
+  return normalizeEmail(email) === FOUNDER_EMAIL
+}
+
 const FREE_EMAIL_DOMAINS = new Set([
   "gmail.com",
   "googlemail.com",
@@ -274,7 +280,7 @@ export function sanitizeEducator(raw: Partial<PersistedEducator> & { id?: string
         ? raw.joinedYear
         : new Date().getFullYear(),
     storageBytes: Math.max(0, Number(raw.storageBytes) || 0),
-    verified: raw.verified === true || isInstitutionalEmail(email),
+    verified: isFounderEmail(email) || raw.verified === true,
     institutionLevel: isInstitutionLevel(raw.institutionLevel)
       ? raw.institutionLevel
       : inferInstitutionLevel(email, sanitizePlainText(String(raw.school ?? ""), 120)),

@@ -1,4 +1,4 @@
-type IconProps = { className?: string; filled?: boolean }
+type IconProps = { className?: string; filled?: boolean; title?: string }
 
 const stroke = {
   fill: "none",
@@ -248,12 +248,47 @@ function Mail(p: IconProps) {
   )
 }
 
+function Gmail(p: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={p.className} fill="none" aria-hidden="true">
+      <path
+        d="M22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6Z"
+        fill="#F8F9FA"
+      />
+      <path d="M22 6 12 13 2 6v1.5l10 7 10-7V6Z" fill="#EA4335" />
+      <path d="M22 6v12c0 1.1-.9 2-2 2h-3V11l5-5Z" fill="#FBBC04" />
+      <path d="M2 6v12c0 1.1.9 2 2 2h3V11L2 6Z" fill="#4285F4" />
+      <path d="M17 20h3c1.1 0 2-.9 2-2V8.5L17 12v8Z" fill="#34A853" />
+      <path d="M7 20H4c-1.1 0-2-.9-2-2V8.5L7 12v8Z" fill="#4285F4" />
+    </svg>
+  )
+}
+
 function Instagram(p: IconProps) {
   return (
+    <svg viewBox="0 0 24 24" className={p.className} fill="none" aria-hidden="true">
+      <defs>
+        <radialGradient id="coursify-ig-grad" cx="20%" cy="105%" r="120%">
+          <stop offset="0%" stopColor="#fdf497" />
+          <stop offset="15%" stopColor="#fdf497" />
+          <stop offset="50%" stopColor="#fd5949" />
+          <stop offset="70%" stopColor="#d6249f" />
+          <stop offset="95%" stopColor="#285AEB" />
+        </radialGradient>
+      </defs>
+      <rect x="2" y="2" width="20" height="20" rx="5.5" fill="url(#coursify-ig-grad)" />
+      <circle cx="12" cy="12" r="4.2" stroke="#fff" strokeWidth="1.8" />
+      <circle cx="17.4" cy="6.6" r="1.1" fill="#fff" />
+      <rect x="5.2" y="5.2" width="13.6" height="13.6" rx="3.8" stroke="#fff" strokeWidth="1.8" />
+    </svg>
+  )
+}
+
+function Copy(p: IconProps) {
+  return (
     <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <rect x="3.5" y="3.5" width="13" height="13" rx="3.5" />
-      <circle cx="10" cy="10" r="3.1" />
-      <circle cx="14.2" cy="5.8" r="0.7" fill="currentColor" stroke="none" />
+      <rect x="7" y="7" width="10" height="10" rx="1.5" />
+      <path d="M4 13H3.5A1.5 1.5 0 0 1 2 11.5v-8A1.5 1.5 0 0 1 3.5 2h8A1.5 1.5 0 0 1 13 3.5V4" />
     </svg>
   )
 }
@@ -335,6 +370,52 @@ function ChevronRight(p: IconProps) {
   )
 }
 
+function Shield(p: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
+      <path d="M10 2.5 4 5v5.5c0 4.2 2.7 6.8 6 7.5 3.3-.7 6-3.3 6-7.5V5l-6-2.5Z" />
+    </svg>
+  )
+}
+
+function Smile(p: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
+      <circle cx="10" cy="10" r="7.5" />
+      <path d="M7 8.5h.01M13 8.5h.01" />
+      <path d="M7 12.5a4 4 0 0 0 6 0" />
+    </svg>
+  )
+}
+
+function Paperclip(p: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
+      <path d="M14.5 9.5 8.7 15.3a3.25 3.25 0 0 1-4.6-4.6l6.4-6.4a2.2 2.2 0 0 1 3.1 3.1L7.2 13.8a1.1 1.1 0 0 1-1.6-1.6l5.7-5.7" />
+    </svg>
+  )
+}
+
+function DoubleCheck(p: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
+      <path d="m2.5 10.5 4 4 9-9" />
+      <path d="m8.5 10.5 3 3 6-6" />
+    </svg>
+  )
+}
+
+function Photo(p: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
+      <rect x="3" y="3.5" width="14" height="13" rx="2" />
+      <circle cx="7.5" cy="7.5" r="1.25" />
+      <path d="m3 14 4.5-4.5 4 4" />
+      <path d="m10 12 2.5-2.5 4.5 4.5" />
+    </svg>
+  )
+}
+
 const Icons = {
   Calendar,
   Grid,
@@ -361,7 +442,9 @@ const Icons = {
   Check,
   Users,
   Mail,
+  Gmail,
   Instagram,
+  Copy,
   Film,
   Slides,
   Table,
@@ -371,6 +454,11 @@ const Icons = {
   Send,
   ChevronLeft,
   ChevronRight,
+  Shield,
+  Smile,
+  Paperclip,
+  DoubleCheck,
+  Photo,
 }
 
 export default Icons

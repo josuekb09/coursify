@@ -109,6 +109,23 @@ export default function SubjectPicker({
                 </li>
               )
             })}
+            {query.trim() && !subjectOptions.some((item) => item.toLowerCase() === query.trim().toLowerCase()) ? (
+              <li>
+                <button
+                  type="button"
+                  role="option"
+                  onClick={() => {
+                    onChange(query.trim())
+                    setOpen(false)
+                    setQuery("")
+                  }}
+                  className="flex w-full items-center gap-2 border-t border-line px-3.5 py-2 text-left text-sm font-medium text-navy hover:bg-navy-soft"
+                >
+                  <Icons.Plus className="h-4 w-4" />
+                  Use “{query.trim()}” as a custom subject
+                </button>
+              </li>
+            ) : null}
             {filtered.length === 0 ? (
               <li className="px-3.5 py-3 text-sm text-muted">No subjects match that search.</li>
             ) : null}

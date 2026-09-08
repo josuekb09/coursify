@@ -90,6 +90,10 @@ export function educatorMatchesQuery(educator: Educator, query: string) {
     [educator.name, educator.school, educator.subject, educator.email, educator.bio].join(" "),
   )
   if (haystack.includes(needle)) return true
+  const tokens = needle.split(/\s+/).filter(Boolean)
+  if (tokens.length > 1 && tokens.every((token) => haystack.includes(token))) {
+    return true
+  }
   return educator.name
     .split(/\s+/)
     .some((part) => foldSearchText(part).includes(needle))

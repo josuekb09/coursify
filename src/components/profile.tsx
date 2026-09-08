@@ -10,6 +10,7 @@ import { useApp } from "@/store"
 import type { Educator, ProfileTab } from "@/types"
 import { buildCvText, downloadTextFile, followButtonLabel, formatCount, kindToTab } from "@/utils"
 import { useEffect, useMemo, useState } from "react"
+import { isFounderEmail } from "@/security"
 
 export default function Profile({
   educator,
@@ -121,7 +122,7 @@ export default function Profile({
                   {educator.verified ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-navy-soft px-2 py-0.5 font-sans text-[11px] font-semibold tracking-normal text-navy">
                       <Icons.VerifiedSeal className="h-3.5 w-3.5" />
-                      Verified Educator
+                      {isFounderEmail(educator.email) ? "Founder · Verified" : "Verified Educator"}
                     </span>
                   ) : null}
                 </h1>

@@ -1,5 +1,7 @@
 import type { Resource, ResourceFormat, UploadInput } from "@/types"
 
+const MAX_UPLOAD_LABEL = "50 MB"
+
 function isHttpUrl(value: string) {
   try {
     const url = new URL(value)
@@ -23,10 +25,13 @@ const EXT_TO_FORMAT: Record<string, ResourceFormat> = {
   ppt: "slides",
   pptx: "slides",
   key: "slides",
+  odp: "slides",
   pdf: "document",
   doc: "document",
   docx: "document",
   txt: "document",
+  rtf: "document",
+  odt: "document",
   xls: "spreadsheet",
   xlsx: "spreadsheet",
   csv: "spreadsheet",
@@ -35,8 +40,8 @@ const EXT_TO_FORMAT: Record<string, ResourceFormat> = {
 
 const FORMAT_EXTS: Record<ResourceFormat, string[]> = {
   video: ["mp4", "webm"],
-  slides: ["ppt", "pptx", "key"],
-  document: ["pdf", "doc", "docx", "txt"],
+  slides: ["ppt", "pptx", "key", "pdf", "odp"],
+  document: ["pdf", "doc", "docx", "txt", "rtf", "odt"],
   spreadsheet: ["xls", "xlsx", "csv"],
   code: ["zip"],
 }
@@ -48,37 +53,37 @@ export const FORMAT_META: Record<
   video: {
     label: "Video lecture",
     badge: "Video",
-    hint: "MP4 or WebM, under 4 MB, or a YouTube / Vimeo link.",
+    hint: `MP4 or WebM video lecture up to ${MAX_UPLOAD_LABEL}, or a YouTube / Vimeo link.`,
     linkHint: "https://youtube.com/watch?v= or https://vimeo.com/",
     accept: ".mp4,.webm,video/mp4,video/webm",
   },
   slides: {
     label: "Slide deck",
     badge: "Slides",
-    hint: "PPTX presentation. Download to open in PowerPoint or Keynote.",
-    linkHint: "https:// link to the original deck",
-    accept: ".ppt,.pptx,.key",
+    hint: `PPTX, Keynote, or PDF slides up to ${MAX_UPLOAD_LABEL}. Open in PowerPoint, Keynote, or reader.`,
+    linkHint: "https:// link to the original slide deck",
+    accept: ".ppt,.pptx,.key,.pdf,.odp,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/pdf",
   },
   document: {
     label: "Document",
     badge: "Document",
-    hint: "PDF or DOCX reading material.",
+    hint: `PDF, DOCX, RTF, or text reading material up to ${MAX_UPLOAD_LABEL}.`,
     linkHint: "https:// link to the original document",
-    accept: ".pdf,.doc,.docx,.txt,application/pdf",
+    accept: ".pdf,.doc,.docx,.txt,.rtf,.odt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   },
   spreadsheet: {
     label: "Spreadsheet",
     badge: "Data",
-    hint: "XLSX or CSV data set.",
+    hint: `XLSX or CSV data set up to ${MAX_UPLOAD_LABEL}.`,
     linkHint: "https:// link to the original sheet",
-    accept: ".xls,.xlsx,.csv,text/csv",
+    accept: ".xls,.xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   },
   code: {
     label: "Code archive",
     badge: "Code",
-    hint: "ZIP project archive or a GitHub repository link.",
+    hint: `ZIP project archive up to ${MAX_UPLOAD_LABEL}, or a GitHub repository link.`,
     linkHint: "https://github.com/org/repo",
-    accept: ".zip,application/zip",
+    accept: ".zip,application/zip,application/x-zip-compressed",
   },
 }
 
