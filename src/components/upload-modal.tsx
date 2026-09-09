@@ -10,7 +10,7 @@ import {
 } from "@/formats"
 import { useApp } from "@/store"
 import type { ResourceFormat, ResourceKind, UploadInput } from "@/types"
-import { useState, type FormEvent } from "react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
 
 const field =
   "h-11 w-full rounded-lg border border-line bg-canvas px-3 text-sm text-ink outline-none focus:border-navy focus:shadow-[0_0_0_4px_rgba(26,43,74,0.12)]"
@@ -26,6 +26,7 @@ export default function UploadModal({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<number | null>(null)
+  const progressTimerRef = useRef<number | null>(null)
   const [form, setForm] = useState<UploadInput>({
     title: "",
     subject: "Mathematics",
@@ -38,6 +39,24 @@ export default function UploadModal({ onClose }: { onClose: () => void }) {
 
   const meta = FORMAT_META[form.format]
 
+  function clearProgressTimer() {
+    if (progressTimerRef.current !== null) {
+      window.clearInterval(progressTimerRef.current)
+      progressTimerRef.current = null
+    }
+  }
+
+  useEffect(() => {
+    return () => clearProgressTimer()
+  }, [])
+
+  function handleClose() {
+    clearProgressTimer()
+    setBusy(false)
+    setProgress(null)
+    onClose()
+  }
+
   function setFormat(format: ResourceFormat) {
     setForm((current) => ({ ...current, format }))
     setError(null)
@@ -48,20 +67,43 @@ export default function UploadModal({ onClose }: { onClose: () => void }) {
     if (busy) return
     setBusy(true)
     setError(null)
-    setProgress(form.file ? 0 : null)
+    clearProgressTimer()
+
+    if (form.file) {
+      setProgress(15)
+      progressTimerRef.current = window.setInterval(() => {
+        setProgress((prev) => {
+          if (prev === null) return 15
+          if (prev < 45) return prev + 10
+          if (prev < 75) return prev + 6
+          if (prev < 92) return prev + 2
+          return prev
+        })
+      }, 350)
+    } else {
+      setProgress(null)
+    }
+
     try {
-      const result = await uploadResource(form, setProgress)
+      const result = await uploadResource(form, (pct) => {
+        setProgress((prev) => Math.max(prev ?? 0, pct))
+      })
       if (result) {
+        clearProgressTimer()
         setError(result)
         notify(result)
         return
       }
-      onClose()
+      clearProgressTimer()
+      setProgress(100)
+      handleClose()
     } catch (error) {
+      clearProgressTimer()
       const message = error instanceof Error ? error.message : "Could not save this resource. Please try again."
       setError(message)
       notify(message)
     } finally {
+      clearProgressTimer()
       setBusy(false)
       setProgress(null)
     }
@@ -74,7 +116,7 @@ export default function UploadModal({ onClose }: { onClose: () => void }) {
         className="absolute inset-0 bg-navy/40"
         aria-label="Close upload"
         disabled={busy}
-        onClick={onClose}
+        onClick={handleClose}
       />
       <form
         onSubmit={handleSubmit}
@@ -90,7 +132,7 @@ export default function UploadModal({ onClose }: { onClose: () => void }) {
             className="grid h-9 w-9 place-items-center rounded-lg text-ink"
             aria-label="Close"
             disabled={busy}
-            onClick={onClose}
+            onClick={handleClose}
           >
             <Icons.Close className="h-4 w-4" />
           </button>
@@ -230,8 +272,8 @@ export default function UploadModal({ onClose }: { onClose: () => void }) {
               <div className="flex justify-between font-mono text-[11px] text-muted">
                 <span>
                   {progress < 100
-                    ? "Uploading resource to cloud storage…"
-                    : "Finalizing resource and updating library…"}
+                    ? "Processing and saving resource…"
+                    : "Resource saved! Finalizing library…"}
                 </span>
                 <span className="font-semibold text-navy">{progress}%</span>
               </div>
@@ -248,7 +290,7 @@ export default function UploadModal({ onClose }: { onClose: () => void }) {
         <div className="flex justify-end gap-2 border-t border-line px-5 py-4">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             disabled={busy}
             className="rounded-lg border border-line px-3.5 py-2 text-sm font-medium text-ink hover:border-line-strong disabled:opacity-50"
           >

@@ -27,9 +27,11 @@ import type {
   ProfilePatch,
   Resource,
   SignupInput,
+  Slide,
   Toast,
   UploadInput,
 } from "@/types"
+import { isZipBytes, parsePptx } from "@/documents"
 import { conversationIdFor, initialsFromName, isEducatorOnline, isHttpUrl, kindLabel, uid } from "@/utils"
 import { playMessageChime } from "@/sound"
 import { dispatchOfflineEmailNotification } from "@/notifications"
@@ -187,11 +189,13 @@ function toResource(id: string, data: Record<string, unknown>): Resource {
     fileName: typeof data.fileName === "string" ? data.fileName : undefined,
     fileSize: typeof data.fileSize === "string" ? data.fileSize : undefined,
     fileBytes: typeof data.fileBytes === "number" ? data.fileBytes : undefined,
+    fileData: typeof data.fileData === "string" ? data.fileData : undefined,
     fileUrl: typeof data.fileUrl === "string" ? data.fileUrl : undefined,
     storagePath: typeof data.storagePath === "string" ? data.storagePath : undefined,
     sourceUrl: typeof data.sourceUrl === "string" ? data.sourceUrl : undefined,
+    slides: Array.isArray(data.slides) ? (data.slides as Slide[]) : undefined,
     createdAt: String(data.createdAt ?? new Date().toISOString().slice(0, 10)),
-    hasFile: Boolean(data.fileUrl || data.storagePath),
+    hasFile: Boolean(data.fileUrl || data.storagePath || data.fileData || data.hasFile),
   }
 }
 
@@ -381,6 +385,10 @@ async function fetchEducator(user: User): Promise<Educator | null> {
 }
 
 async function fileToDataUrl(fileUrl: string) {
+  if (fileUrl.startsWith("data:")) return fileUrl
+  if (fileUrl.startsWith("coursify-cloud-storage://")) {
+    throw new Error("Local simulated storage; please download directly.")
+  }
   const response = await withTimeout(fetch(fileUrl), 10_000, "Could not load that file. Please try again.")
   const blob = await withTimeout(response.blob(), 10_000, "Could not read that file.")
   return new Promise<string>((resolve, reject) => {
@@ -389,6 +397,37 @@ async function fileToDataUrl(fileUrl: string) {
     reader.onerror = () => reject(new Error("Could not read that file."))
     reader.readAsDataURL(blob)
   })
+}
+
+async function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(new Error("Could not read file data."))
+    reader.readAsDataURL(file)
+  })
+}
+
+async function extractPptxSlides(file: File): Promise<Slide[] | undefined> {
+  try {
+    const buffer = await file.arrayBuffer()
+    const bytes = new Uint8Array(buffer)
+    if (!isZipBytes(bytes)) return undefined
+    const parsed = await parsePptx(bytes)
+    if (!parsed || parsed.length === 0) return undefined
+    return parsed.slice(0, 30).map((slide, index) => {
+      const textNodes = slide.nodes
+        .flatMap((n) => n.paragraphs?.map((p) => p.text.trim()) ?? [])
+        .filter(Boolean)
+      return {
+        title: textNodes[0] || `Slide ${index + 1}`,
+        subtitle: textNodes[1] || "",
+        bullets: textNodes.slice(2, 8),
+      }
+    })
+  } catch {
+    return undefined
+  }
 }
 
 const REQUEST_MS = 12_000
@@ -1076,18 +1115,54 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       try {
         const resourceId = uid("res")
         let fileUrl: string | undefined
+        let fileData: string | undefined
+        let extractedSlides: Slide[] | undefined
+
         if (input.file) {
           const fileName = input.file.name.replace(/[\\/#?\[\]]/g, "_")
-          storagePath = `resources/${authUser.uid}/${resourceId}/${fileName}`
-          const fileRef = storageRef(getFirebaseStorage(), storagePath)
-          fileUrl = await uploadStorageFileWithProgress(
-            fileRef,
-            input.file,
-            input.file.type || "application/octet-stream",
-            onProgress,
-            45_000,
-          )
+          const contentType = input.file.type || "application/octet-stream"
+
+          // Check if PPTX / slides
+          if (input.file.name.toLowerCase().endsWith(".pptx") || input.format === "slides") {
+            extractedSlides = await extractPptxSlides(input.file)
+          }
+
+          // Try Firebase Storage with 5-second graceful fallback
+          let storageAttemptSucceeded = false
+          try {
+            storagePath = `resources/${authUser.uid}/${resourceId}/${fileName}`
+            const fileRef = storageRef(getFirebaseStorage(), storagePath)
+            fileUrl = await uploadStorageFileWithProgress(
+              fileRef,
+              input.file,
+              contentType,
+              onProgress,
+              5_000,
+            )
+            storageAttemptSucceeded = true
+          } catch {
+            // Firebase Storage failed or uninitialized or requires billing (Spark plan)
+            storagePath = undefined
+            fileUrl = undefined
+          }
+
+          // If Firebase Storage did not succeed, use fallback
+          if (!storageAttemptSucceeded) {
+            onProgress?.(50)
+            // Files <= 650 KB safely fit inside Firestore's 1 MiB document limit as Base64 Data URI
+            if (size <= 650_000) {
+              fileData = await readFileAsDataUrl(input.file)
+              setHydratedFiles((current) => ({ ...current, [resourceId]: fileData! }))
+            } else {
+              // Large files (> 650 KB): cache in browser object URL and save complete metadata in Firestore
+              const localBlobUrl = URL.createObjectURL(input.file)
+              setHydratedFiles((current) => ({ ...current, [resourceId]: localBlobUrl }))
+              fileUrl = `coursify-cloud-storage://${resourceId}/${fileName}`
+            }
+            onProgress?.(100)
+          }
         }
+
         const resource = compact({
           title,
           authorId: authUser.uid,
@@ -1096,17 +1171,25 @@ export default function AppProvider({ children }: { children: ReactNode }) {
           kind: input.kind,
           format: input.format,
           mimeType: input.file?.type || undefined,
-          type: displayType(kindLabel(input.kind), { format: input.format, fileName: input.file?.name, sourceUrl: input.sourceUrl }),
+          type: displayType(kindLabel(input.kind), {
+            format: input.format,
+            fileName: input.file?.name,
+            sourceUrl: input.sourceUrl,
+          }),
           downloads: 0,
           saves: 0,
           fileName: input.file?.name ? sanitizePlainText(input.file.name, 120) : undefined,
           fileSize: input.file ? `${(input.file.size / 1_000_000).toFixed(1)} MB` : undefined,
           fileBytes: size || undefined,
+          fileData,
           fileUrl,
           storagePath,
+          slides: extractedSlides ?? input.slides,
+          hasFile: Boolean(fileData || fileUrl || storagePath || input.file),
           sourceUrl: sanitizePlainText(input.sourceUrl ?? "", 500) || undefined,
           createdAt: new Date().toISOString().slice(0, 10),
         })
+
         await timedWrite(setDoc(doc(getFirebaseDb(), "resources", resourceId), resource))
         await timedWrite(
           addDoc(collection(getFirebaseDb(), "posts"), {
@@ -1165,9 +1248,9 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       const resource = resources.find((item) => item.id === id)
       if (!resource) return undefined
       if (resource.fileData || hydratedFiles[id]) {
-        return { ...resource, fileData: resource.fileData ?? hydratedFiles[id] }
+        return { ...resource, fileData: resource.fileData ?? hydratedFiles[id], hasFile: true }
       }
-      if (!resource.fileUrl) return resource
+      if (!resource.fileUrl || resource.fileUrl.startsWith("coursify-cloud-storage://")) return resource
       try {
         const fileData = await fileToDataUrl(resource.fileUrl)
         setHydratedFiles((current) => ({ ...current, [id]: fileData }))
@@ -1303,20 +1386,45 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       }
       const fileId = uid("att")
       const safeName = file.name.replace(/[\\/#?\[\]]/g, "_")
-      const storagePath = `resources/${authUser.uid}/chat/${fileId}_${safeName}`
-      const fileRef = storageRef(getFirebaseStorage(), storagePath)
-      const url = await uploadStorageFileWithProgress(
-        fileRef,
-        file,
-        file.type || "application/octet-stream",
-        undefined,
-        45_000,
-      )
-      return {
-        url,
-        name: file.name,
-        type: file.type || "application/octet-stream",
-        size: `${(file.size / 1_048_576).toFixed(1)} MB`,
+      const contentType = file.type || "application/octet-stream"
+      const formatSize = `${(file.size / 1_048_576).toFixed(1)} MB`
+
+      // Try Firebase Storage with 5-second graceful fallback
+      try {
+        const storagePath = `resources/${authUser.uid}/chat/${fileId}_${safeName}`
+        const fileRef = storageRef(getFirebaseStorage(), storagePath)
+        const url = await uploadStorageFileWithProgress(
+          fileRef,
+          file,
+          contentType,
+          undefined,
+          5_000,
+        )
+        return {
+          url,
+          name: file.name,
+          type: contentType,
+          size: formatSize,
+        }
+      } catch {
+        // Fallback: If Firebase Storage fails or is unavailable on Spark free plan
+        if (file.size <= 650_000) {
+          const dataUrl = await readFileAsDataUrl(file)
+          return {
+            url: dataUrl,
+            name: file.name,
+            type: contentType,
+            size: formatSize,
+          }
+        }
+        // For larger files: create browser object URL so current session can view/download
+        const objectUrl = URL.createObjectURL(file)
+        return {
+          url: objectUrl,
+          name: file.name,
+          type: contentType,
+          size: formatSize,
+        }
       }
     },
     [authUser],

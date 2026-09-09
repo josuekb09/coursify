@@ -222,7 +222,13 @@ export function deliverResource(resource: Resource, author: string) {
     downloadDataUrl(resource.fileName, resource.fileData)
     return "download" as const
   }
-  if (resource.fileUrl) {
+  const isDirectUrl =
+    Boolean(resource.fileUrl) &&
+    (resource.fileUrl!.startsWith("http://") ||
+      resource.fileUrl!.startsWith("https://") ||
+      resource.fileUrl!.startsWith("blob:") ||
+      resource.fileUrl!.startsWith("data:"))
+  if (isDirectUrl && resource.fileUrl) {
     const anchor = document.createElement("a")
     anchor.href = resource.fileUrl
     anchor.download = resource.fileName ?? resource.title
@@ -233,13 +239,43 @@ export function deliverResource(resource: Resource, author: string) {
     anchor.remove()
     return "download" as const
   }
-  if (resource.sourceUrl) {
+  if (resource.sourceUrl && (resource.sourceUrl.startsWith("http://") || resource.sourceUrl.startsWith("https://"))) {
     window.open(resource.sourceUrl, "_blank", "noopener,noreferrer")
     return "open" as const
   }
+  if (resource.slides && resource.slides.length > 0) {
+    const slideLines = [
+      `# ${resource.title}`,
+      `${resource.subject} · ${resource.grade}`,
+      `Author: ${author}`,
+      "",
+      "---",
+      "",
+      ...resource.slides.flatMap((slide, idx) => [
+        `## Slide ${idx + 1}: ${slide.title}`,
+        slide.subtitle ? `_${slide.subtitle}_` : "",
+        ...(slide.bullets?.map((b) => `• ${b}`) ?? []),
+        "",
+      ]),
+    ].filter(Boolean)
+    downloadTextFile(
+      resourceFilename(resource.fileName ? resource.fileName.replace(/\.[^.]+$/, ".txt") : resource.title),
+      slideLines.join("\n"),
+    )
+    return "download" as const
+  }
   downloadTextFile(
-    resourceFilename(resource.title),
-    [resource.title, `${resource.subject}  ·  ${resource.grade}`, `By ${author}`].join("\n"),
+    resourceFilename(resource.fileName ?? resource.title),
+    [
+      `# ${resource.title}`,
+      `${resource.subject} · ${resource.grade}`,
+      `By ${author}`,
+      resource.fileName ? `File: ${resource.fileName} (${resource.fileSize ?? ""})` : "",
+      "",
+      "This resource is indexed in your Coursify library.",
+    ]
+      .filter(Boolean)
+      .join("\n"),
   )
   return "download" as const
 }

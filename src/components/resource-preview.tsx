@@ -294,6 +294,43 @@ function PreviewCanvas({ resource, author }: { resource: Resource; author: strin
   }
 
   if (resource.format === "slides") {
+    if (resource.slides && resource.slides.length > 0) {
+      return (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between rounded-xl border border-line bg-canvas px-4 py-2.5">
+            <span className="font-mono text-xs font-semibold uppercase tracking-wide text-navy">
+              {resource.slides.length} Slides Extracted
+            </span>
+            <span className="font-mono text-xs text-muted">Presentation Overview</span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {resource.slides.map((slide, idx) => (
+              <div key={idx} className="flex flex-col rounded-xl border border-line bg-surface p-4 shadow-xs">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-muted">
+                  Slide {idx + 1}
+                </span>
+                <h4 className="mt-1 font-display text-base font-semibold text-ink">
+                  {slide.title}
+                </h4>
+                {slide.subtitle ? (
+                  <p className="mt-0.5 text-xs italic text-muted">{slide.subtitle}</p>
+                ) : null}
+                {slide.bullets && slide.bullets.length > 0 ? (
+                  <ul className="mt-2.5 space-y-1 text-xs text-ink/80">
+                    {slide.bullets.map((b, bi) => (
+                      <li key={bi} className="flex items-start gap-1.5">
+                        <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-navy" />
+                        <span>{b}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+    }
     return (
       <FileNotice
         title={resource.fileName ?? resource.title}

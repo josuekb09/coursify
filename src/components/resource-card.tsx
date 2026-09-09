@@ -31,6 +31,7 @@ export default function ResourceCard({
   const format = resource.format ?? inferResourceFormat(resource)
   const isLink = Boolean(resource.sourceUrl && !resource.fileData && !resource.fileUrl && !resource.hasFile)
   const isSlides = format === "slides"
+  const hasSlidePreview = Boolean(resource.slides && resource.slides.length > 0)
 
   async function handleDownload() {
     if (downloading) return
@@ -64,10 +65,10 @@ export default function ResourceCard({
     <>
       <article
         className={`group flex flex-col rounded-xl border border-line bg-surface p-5 transition-all hover:border-line-strong hover:-translate-y-0.5 ${
-          isSlides ? "" : "cursor-pointer"
+          isSlides && !hasSlidePreview ? "" : "cursor-pointer"
         }`}
         onClick={() => {
-          if (!isSlides) setPreviewOpen(true)
+          if (!isSlides || hasSlidePreview) setPreviewOpen(true)
         }}
       >
         <div className="flex items-center justify-between gap-2">
@@ -134,7 +135,7 @@ export default function ResourceCard({
             {resource.downloads.toLocaleString()}
           </span>
           <div className="flex flex-wrap items-center justify-end gap-1.5">
-            {!isSlides ? (
+            {!isSlides || hasSlidePreview ? (
               <button
                 type="button"
                 onClick={() => setPreviewOpen(true)}

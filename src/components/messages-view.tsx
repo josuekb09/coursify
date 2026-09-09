@@ -569,6 +569,7 @@ export default function MessagesView({
                             {message.attachmentType?.startsWith("image/") ? (
                               <a
                                 href={message.attachmentUrl}
+                                download={message.attachmentName ?? "image"}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="block overflow-hidden rounded-xl border border-white/20"
@@ -582,6 +583,7 @@ export default function MessagesView({
                             ) : (
                               <a
                                 href={message.attachmentUrl}
+                                download={message.attachmentName ?? "attachment"}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className={`flex items-center gap-3 rounded-xl p-2.5 text-xs font-semibold transition ${
