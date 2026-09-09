@@ -94,10 +94,31 @@ export default function Sidebar({
         </div>
       </div>
 
+      <div className="mt-4 pt-3 border-t border-line/60 space-y-1 text-xs text-muted">
+        <a
+          href="mailto:kabuyaentambwe03@gmail.com"
+          className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 hover:bg-black/[0.03] hover:text-ink transition font-medium"
+          title="Email platform creator & support"
+        >
+          <Icons.Mail className="h-4 w-4 shrink-0 text-muted" />
+          <span className="truncate">Support & Feedback</span>
+        </a>
+        <a
+          href="https://www.instagram.com/cours.ify/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 hover:bg-black/[0.03] hover:text-[#c13584] transition font-medium"
+          title="Official Instagram community"
+        >
+          <Icons.Instagram className="h-4 w-4 shrink-0 text-pink-500" />
+          <span className="truncate">@cours.ify ↗</span>
+        </a>
+      </div>
+
       <button
         type="button"
         onClick={logout}
-        className="mt-auto flex items-center gap-3 rounded-lg border border-line px-3 py-2.5 text-sm font-semibold text-navy hover:border-line-strong hover:bg-navy-soft"
+        className="mt-3 flex items-center gap-3 rounded-lg border border-line px-3 py-2.5 text-sm font-semibold text-navy hover:border-line-strong hover:bg-navy-soft"
       >
         <Icons.Logout className="h-[18px] w-[18px]" />
         Sign out

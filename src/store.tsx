@@ -552,6 +552,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
   const [hydratedFiles, setHydratedFiles] = useState<Record<string, string>>({})
   const [sessionProfile, setSessionProfile] = useState<Educator | null>(null)
   const lastMessageCountRef = useRef<number>(0)
+  const lastHeartbeatRef = useRef<number>(0)
 
   const notify = useCallback((message: string) => {
     const id = uid("toast")
@@ -1096,6 +1097,63 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       return firebaseErrorMessage(error)
     }
   }, [authUser, currentUser, notify, resources])
+
+  // Auto-award verified badge if educator meets strict merit criteria
+  useEffect(() => {
+    if (authUser && currentUser && badgeEligible && !currentUser.verified && !currentUser.badgeClaimed) {
+      void claimVerifiedBadge()
+    }
+  }, [authUser, currentUser, badgeEligible, claimVerifiedBadge])
+
+  // Throttled real-time presence heartbeat (updates lastActiveAt max once every 60s during active interaction)
+  useEffect(() => {
+    if (!authUser || !currentUser) return
+
+    const sendHeartbeat = () => {
+      if (document.visibilityState === "hidden") return
+      const now = Date.now()
+      if (now - lastHeartbeatRef.current < 60_000) return
+      lastHeartbeatRef.current = now
+
+      const nowIso = new Date().toISOString()
+      if (isFirebaseConfigured()) {
+        try {
+          const db = getFirebaseDb()
+          updateDoc(doc(db, "educators", authUser.uid), {
+            lastActiveAt: nowIso,
+          }).catch(() => {
+            // Non-blocking background heartbeat
+          })
+        } catch {
+          // Ignore
+        }
+      }
+      setSessionProfile((prev) => (prev ? { ...prev, lastActiveAt: nowIso } : null))
+    }
+
+    sendHeartbeat()
+
+    const onActivity = () => {
+      sendHeartbeat()
+    }
+
+    window.addEventListener("mousedown", onActivity, { passive: true })
+    window.addEventListener("keydown", onActivity, { passive: true })
+    window.addEventListener("touchstart", onActivity, { passive: true })
+    window.addEventListener("focus", onActivity)
+    document.addEventListener("visibilitychange", onActivity)
+
+    const interval = window.setInterval(sendHeartbeat, 60_000)
+
+    return () => {
+      window.removeEventListener("mousedown", onActivity)
+      window.removeEventListener("keydown", onActivity)
+      window.removeEventListener("touchstart", onActivity)
+      window.removeEventListener("focus", onActivity)
+      document.removeEventListener("visibilitychange", onActivity)
+      clearInterval(interval)
+    }
+  }, [authUser, currentUser?.id])
 
   const uploadResource = useCallback(
     async (input: UploadInput, onProgress?: (progress: number) => void) => {

@@ -416,6 +416,39 @@ function Photo(p: IconProps) {
   )
 }
 
+function Mic(p: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
+      <path d="M10 2.5a2.5 2.5 0 0 0-2.5 2.5v5a2.5 2.5 0 0 0 5 0V5a2.5 2.5 0 0 0-2.5-2.5Z" />
+      <path d="M5 9.5a5 5 0 0 0 10 0M10 14.5v3M7.5 17.5h5" />
+    </svg>
+  )
+}
+
+function Play(p: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={p.className} fill="currentColor">
+      <path d="M6.5 4.5v11l9-5.5-9-5.5Z" />
+    </svg>
+  )
+}
+
+function Pause(p: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={p.className} fill="currentColor">
+      <path d="M6 4.5h2.5v11H6zM11.5 4.5H14v11h-2.5z" />
+    </svg>
+  )
+}
+
+function Stop(p: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={p.className} fill="currentColor">
+      <rect x="5" y="5" width="10" height="10" rx="1.5" />
+    </svg>
+  )
+}
+
 const Icons = {
   Calendar,
   Grid,
@@ -459,6 +492,10 @@ const Icons = {
   Paperclip,
   DoubleCheck,
   Photo,
+  Mic,
+  Play,
+  Pause,
+  Stop,
 }
 
 export default Icons

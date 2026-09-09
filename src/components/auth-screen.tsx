@@ -251,7 +251,7 @@ export default function AuthScreen({
                     autoComplete="new-password"
                   />
                   <span className="mt-1.5 block text-[12px] text-muted">
-                    At least 8 characters. Your password is stored in Firebase Authentication.
+                    At least 8 characters. Protected with industry-standard secure encryption.
                   </span>
                 </label>
                 {error ? <p className="text-sm text-[#8a3b32]">{error}</p> : null}

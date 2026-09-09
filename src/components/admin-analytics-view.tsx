@@ -98,7 +98,7 @@ export default function AdminAnalyticsView() {
             </span>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 font-mono text-[10px] font-semibold text-emerald-700">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Live Firestore Sync
+              Live Network Metrics
             </span>
           </div>
           <h1 className="mt-2 font-display text-2xl font-bold tracking-[-0.03em] text-ink sm:text-3xl">
@@ -240,7 +240,7 @@ export default function AdminAnalyticsView() {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="font-display text-[16px] font-bold text-ink">Recent educator sign-ups</h2>
-              <p className="mt-0.5 text-xs text-muted">Real-time registrations synced with Firestore</p>
+              <p className="mt-0.5 text-xs text-muted">Real-time registrations across the Coursify faculty network</p>
             </div>
             <span className="font-mono text-xs text-muted">{stats.totalEducators} total accounts</span>
           </div>
