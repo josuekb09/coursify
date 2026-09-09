@@ -1,5 +1,6 @@
 import Avatar from "@/components/avatar"
 import Icons from "@/components/icons"
+import { MAX_FILE_BYTES } from "@/data"
 import { isFounderEmail } from "@/security"
 import { useApp } from "@/store"
 import type { ChatAttachment } from "@/types"
@@ -241,8 +242,8 @@ export default function MessagesView({
     const file = event.target.files?.[0]
     if (!file) return
     event.target.value = ""
-    if (file.size > 25 * 1024 * 1024) {
-      notify("Attachments must be 25MB or smaller.")
+    if (file.size > MAX_FILE_BYTES) {
+      notify(`Attachments must be ${Math.round(MAX_FILE_BYTES / 1_048_576)}MB or smaller.`)
       return
     }
     setUploading(true)

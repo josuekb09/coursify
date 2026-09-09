@@ -110,8 +110,20 @@ export function firebaseErrorMessage(error: unknown, context?: "login" | "signup
   if (code === "auth/too-many-requests") {
     return "Too many attempts. Please wait a moment and try again."
   }
-  if (code === "permission-denied") {
-    return "Coursify could not read your educator profile. Check Firestore rules and try again."
+  if (code === "permission-denied" || code === "storage/unauthorized") {
+    return "Permission denied by storage rules. Please verify you are signed in."
+  }
+  if (code === "storage/canceled") {
+    return "File upload was canceled."
+  }
+  if (code === "storage/quota-exceeded") {
+    return "Storage quota exceeded. Please contact platform support."
+  }
+  if (code === "storage/retry-limit-exceeded") {
+    return "Upload took too long or connection was interrupted. Please check your network and try again."
+  }
+  if (code === "storage/cannot-slice-blob") {
+    return "Could not read the selected file. Please select a valid file."
   }
   if (code === "auth/network-request-failed") {
     return "Could not reach Firebase. Check your connection and try again."

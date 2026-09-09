@@ -7,6 +7,35 @@ export type OfflineMessageNotification = {
   timestamp: string
 }
 
+const EMAIL_COOLDOWN_MS = 10 * 60 * 1000 // 10-minute deduplication window
+const inMemoryDispatched = new Map<string, number>()
+
+export function canDispatchOfflineEmail(recipientEmail: string): boolean {
+  const now = Date.now()
+  const norm = recipientEmail.trim().toLowerCase()
+  const lastTimeMem = inMemoryDispatched.get(norm) || 0
+  let lastTimeStore = 0
+  try {
+    const raw = localStorage.getItem(`coursify.email_last_sent.${norm}`)
+    if (raw) lastTimeStore = Number(raw) || 0
+  } catch {
+    /* ignore */
+  }
+  const lastTime = Math.max(lastTimeMem, lastTimeStore)
+  return now - lastTime > EMAIL_COOLDOWN_MS
+}
+
+export function recordOfflineEmailDispatch(recipientEmail: string) {
+  const now = Date.now()
+  const norm = recipientEmail.trim().toLowerCase()
+  inMemoryDispatched.set(norm, now)
+  try {
+    localStorage.setItem(`coursify.email_last_sent.${norm}`, String(now))
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * Dispatches an automated email alert when an educator receives a private message while offline.
  * Ready for production SMTP / SendGrid / Firebase Cloud Function webhook endpoints.
@@ -17,7 +46,14 @@ export async function dispatchOfflineEmailNotification(data: {
   senderName: string
   messageSnippet: string
   appUrl?: string
-}): Promise<OfflineMessageNotification> {
+  force?: boolean
+}): Promise<OfflineMessageNotification | null> {
+  if (!data.force && !canDispatchOfflineEmail(data.recipientEmail)) {
+    console.info(`[Coursify Email Alert] Suppressed duplicate email for ${data.recipientEmail} (10m cooldown active).`)
+    return null
+  }
+
+  recordOfflineEmailDispatch(data.recipientEmail)
   const appUrl = data.appUrl ?? "https://coursify-a1a0d.web.app"
   const payload: OfflineMessageNotification = {
     recipientEmail: data.recipientEmail,

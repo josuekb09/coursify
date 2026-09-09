@@ -67,6 +67,7 @@ import {
   listAll,
   ref as storageRef,
   uploadBytesResumable,
+  type StorageReference,
 } from "firebase/storage"
 import {
   createContext,
@@ -431,6 +432,70 @@ async function deleteStorageFolder(path: string) {
   }
 }
 
+/**
+ * Uploads a file to Firebase Storage with a strict 45-second timeout, cancellation support,
+ * and reliable progress tracking that always completes gracefully.
+ */
+async function uploadStorageFileWithProgress(
+  fileRef: StorageReference,
+  file: File,
+  contentType: string,
+  onProgress?: (progress: number) => void,
+  timeoutMs = 45_000,
+): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    let finished = false
+    const task = uploadBytesResumable(fileRef, file, { contentType })
+
+    const timer = window.setTimeout(() => {
+      if (finished) return
+      finished = true
+      try {
+        task.cancel()
+      } catch {
+        /* ignore */
+      }
+      reject(
+        new Error(
+          "File upload timed out after 45 seconds. Please check your network connection and try again.",
+        ),
+      )
+    }, timeoutMs)
+
+    task.on(
+      "state_changed",
+      (snapshot) => {
+        if (finished) return
+        const total = snapshot.totalBytes || file.size || 1
+        const pct = Math.min(99, Math.max(0, Math.round((snapshot.bytesTransferred / total) * 100)))
+        onProgress?.(pct)
+      },
+      (error) => {
+        if (finished) return
+        finished = true
+        window.clearTimeout(timer)
+        reject(error)
+      },
+      async () => {
+        if (finished) return
+        finished = true
+        window.clearTimeout(timer)
+        try {
+          const downloadUrl = await withTimeout(
+            getDownloadURL(fileRef),
+            15_000,
+            "Uploaded file, but could not generate download link. Please try again.",
+          )
+          onProgress?.(100)
+          resolve(downloadUrl)
+        } catch (err) {
+          reject(err)
+        }
+      },
+    )
+  })
+}
+
 export default function AppProvider({ children }: { children: ReactNode }) {
   const [authUser, setAuthUser] = useState<User | null>(null)
   const [educators, setEducators] = useState<Educator[]>([])
@@ -466,9 +531,11 @@ export default function AppProvider({ children }: { children: ReactNode }) {
   const badgeEligible = Boolean(
     currentUser &&
       !currentUser.verified &&
+      currentUser.name.trim() &&
       currentUser.bio.trim() &&
       currentUser.school.trim() &&
       currentUser.subject.trim() &&
+      currentUser.institutionLevel &&
       resources.filter((resource) => resource.authorId === currentUser.id).length >= 3,
   )
 
@@ -697,15 +764,24 @@ export default function AppProvider({ children }: { children: ReactNode }) {
     const interval = window.setInterval(() => sendHeartbeat(true), 60_000)
 
     const handleActivity = () => sendHeartbeat(false)
+    const handleFocus = () => sendHeartbeat(true)
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        sendHeartbeat(true)
+      }
+    }
+
     window.addEventListener("pointerdown", handleActivity, { passive: true })
     window.addEventListener("keydown", handleActivity, { passive: true })
-    window.addEventListener("focus", () => sendHeartbeat(true))
+    window.addEventListener("focus", handleFocus)
+    document.addEventListener("visibilitychange", handleVisibility)
 
     return () => {
       window.clearInterval(interval)
       window.removeEventListener("pointerdown", handleActivity)
       window.removeEventListener("keydown", handleActivity)
-      window.removeEventListener("focus", () => sendHeartbeat(true))
+      window.removeEventListener("focus", handleFocus)
+      document.removeEventListener("visibilitychange", handleVisibility)
     }
   }, [authUser?.uid])
 
@@ -947,13 +1023,20 @@ export default function AppProvider({ children }: { children: ReactNode }) {
 
   const claimVerifiedBadge = useCallback(async () => {
     if (!authUser || !currentUser) return "Sign in to claim a badge."
+    const userResources = resources.filter((resource) => resource.authorId === currentUser.id)
+    const hasCompleteProfile = Boolean(
+      currentUser.name.trim() &&
+        currentUser.bio.trim() &&
+        currentUser.school.trim() &&
+        currentUser.subject.trim() &&
+        currentUser.institutionLevel,
+    )
     const eligible =
       isFounderEmail(currentUser.email) ||
-      (Boolean(currentUser.bio.trim()) &&
-        Boolean(currentUser.school.trim()) &&
-        Boolean(currentUser.subject.trim()) &&
-        resources.filter((resource) => resource.authorId === currentUser.id).length >= 3)
-    if (!eligible) return "Complete your profile and share three resources before claiming this badge."
+      (hasCompleteProfile && userResources.length >= 3)
+    if (!eligible) {
+      return "Complete your profile (100%) and share at least three curriculum resources to unlock this badge."
+    }
     try {
       await timedWrite(
         updateDoc(doc(getFirebaseDb(), "educators", authUser.uid), {
@@ -968,7 +1051,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
         verified: true,
         badgeClaimed: true,
       })
-      notify("Verified Educator badge claimed — congratulations!")
+      notify("Congratulations! You've unlocked the Verified Educator Badge.")
       return null
     } catch (error) {
       return firebaseErrorMessage(error)
@@ -997,18 +1080,12 @@ export default function AppProvider({ children }: { children: ReactNode }) {
           const fileName = input.file.name.replace(/[\\/#?\[\]]/g, "_")
           storagePath = `resources/${authUser.uid}/${resourceId}/${fileName}`
           const fileRef = storageRef(getFirebaseStorage(), storagePath)
-          const task = uploadBytesResumable(fileRef, input.file, {
-            contentType: input.file.type || "application/octet-stream",
-          })
-          task.on("state_changed", (snapshot) => {
-            const total = snapshot.totalBytes || input.file?.size || 1
-            onProgress?.(Math.round((snapshot.bytesTransferred / total) * 100))
-          })
-          await task
-          fileUrl = await withTimeout(
-            getDownloadURL(fileRef),
+          fileUrl = await uploadStorageFileWithProgress(
+            fileRef,
+            input.file,
+            input.file.type || "application/octet-stream",
+            onProgress,
             45_000,
-            "Could not finish saving that file. Please try again.",
           )
         }
         const resource = compact({
@@ -1221,20 +1298,19 @@ export default function AppProvider({ children }: { children: ReactNode }) {
   const uploadChatAttachment = useCallback(
     async (file: File): Promise<ChatAttachment> => {
       if (!authUser) throw new Error("Sign in to send attachments.")
-      if (file.size > 25 * 1024 * 1024) {
-        throw new Error("Chat attachments must be 25MB or less.")
+      if (file.size > MAX_FILE_BYTES) {
+        throw new Error(`Chat attachments must be ${Math.round(MAX_FILE_BYTES / 1_048_576)}MB or less.`)
       }
       const fileId = uid("att")
       const safeName = file.name.replace(/[\\/#?\[\]]/g, "_")
       const storagePath = `resources/${authUser.uid}/chat/${fileId}_${safeName}`
       const fileRef = storageRef(getFirebaseStorage(), storagePath)
-      await uploadBytesResumable(fileRef, file, {
-        contentType: file.type || "application/octet-stream",
-      })
-      const url = await withTimeout(
-        getDownloadURL(fileRef),
-        30_000,
-        "Attachment upload timed out. Please try again.",
+      const url = await uploadStorageFileWithProgress(
+        fileRef,
+        file,
+        file.type || "application/octet-stream",
+        undefined,
+        45_000,
       )
       return {
         url,

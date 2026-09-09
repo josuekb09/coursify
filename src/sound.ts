@@ -46,3 +46,35 @@ export function playMessageChime() {
     /* Browser policy might require an initial user gesture before playing audio */
   }
 }
+
+/**
+ * Ensures the Web Audio context is initialized and resumed on the user's first gesture
+ * so incoming message chimes are never silenced by browser autoplay policies.
+ */
+export function initAudioUnlock() {
+  if (typeof window === "undefined") return
+  const unlock = () => {
+    try {
+      const AudioContextClass =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+      if (AudioContextClass) {
+        if (!audioCtx) {
+          audioCtx = new AudioContextClass()
+        }
+        if (audioCtx.state === "suspended") {
+          void audioCtx.resume()
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    window.removeEventListener("pointerdown", unlock)
+    window.removeEventListener("keydown", unlock)
+  }
+  window.addEventListener("pointerdown", unlock, { once: true, passive: true })
+  window.addEventListener("keydown", unlock, { once: true, passive: true })
+}
+
+// Automatically bind the unlock on module load in client environments
+initAudioUnlock()
