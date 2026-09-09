@@ -196,9 +196,8 @@ function ContactForm() {
   if (status === "sent") {
     return (
       <div className="flex flex-col justify-center rounded-3xl border border-emerald-500/20 bg-gradient-to-b from-surface via-surface to-emerald-50/40 p-8 sm:p-10 shadow-[0_20px_50px_rgba(26,43,74,0.06)]">
-        <div className="relative inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 shadow-inner">
+        <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 shadow-inner">
           <Icons.Check className="h-7 w-7 stroke-[2.5]" />
-          <span className="absolute -top-1 -right-1 h-3.5 w-3.5 rounded-full bg-emerald-500 animate-ping" />
         </div>
         <h3 className="mt-5 font-display text-2xl font-bold tracking-tight text-ink">
           Message delivered directly
@@ -536,10 +535,7 @@ export default function Landing({
           <div className="mx-auto max-w-6xl px-5 sm:px-6">
             <div className="max-w-2xl">
               <div className="inline-flex items-center gap-2 rounded-full border border-navy/15 bg-navy/5 px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-wider text-navy shadow-2xs">
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
-                </span>
+                <Icons.Mail className="h-3 w-3 text-navy" />
                 Direct Creator Access
               </div>
               <h2 className="mt-4 font-display text-3xl font-bold tracking-tight text-ink sm:text-4xl lg:text-[2.65rem] lg:leading-tight">
@@ -679,8 +675,8 @@ export default function Landing({
                   active classroom practice, and peer curriculum collaboration.
                 </p>
                 <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/90 px-3 py-1 text-xs text-slate-300">
-                  <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Platform Online & Operational</span>
+                  <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                  <span>Platform Operational</span>
                 </div>
               </div>
               <p className="mt-8 text-xs text-slate-500">

@@ -408,6 +408,62 @@ async function readFileAsDataUrl(file: File): Promise<string> {
   })
 }
 
+async function compressImageToSafeDataUrl(
+  file: File,
+  maxDimension = 1200,
+): Promise<{ dataUrl: string; sizeStr: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error("Could not read image file."))
+    reader.onload = () => {
+      const img = new Image()
+      img.onerror = () => reject(new Error("Could not parse image."))
+      img.onload = () => {
+        let { width, height } = img
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = Math.round((height * maxDimension) / width)
+            width = maxDimension
+          } else {
+            width = Math.round((width * maxDimension) / height)
+            height = maxDimension
+          }
+        }
+        const canvas = document.createElement("canvas")
+        canvas.width = Math.max(1, width)
+        canvas.height = Math.max(1, height)
+        const ctx = canvas.getContext("2d")
+        if (!ctx) {
+          const raw = String(reader.result)
+          resolve({ dataUrl: raw, sizeStr: `${Math.round((raw.length * 0.75) / 1024)} KB` })
+          return
+        }
+        ctx.drawImage(img, 0, 0, width, height)
+        let quality = 0.75
+        let dataUrl = canvas.toDataURL("image/jpeg", quality)
+        if (dataUrl.length > 650_000) {
+          quality = 0.55
+          dataUrl = canvas.toDataURL("image/jpeg", quality)
+        }
+        if (dataUrl.length > 650_000) {
+          canvas.width = Math.round(width * 0.7)
+          canvas.height = Math.round(height * 0.7)
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+          dataUrl = canvas.toDataURL("image/jpeg", 0.5)
+        }
+        const sizeBytes = Math.round(dataUrl.length * 0.75)
+        const sizeStr =
+          sizeBytes > 1_048_576
+            ? `${(sizeBytes / 1_048_576).toFixed(1)} MB`
+            : `${Math.round(sizeBytes / 1024)} KB`
+        resolve({ dataUrl, sizeStr })
+      }
+      img.src = String(reader.result)
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
 async function extractPptxSlides(file: File): Promise<Slide[] | undefined> {
   try {
     const buffer = await file.arrayBuffer()
@@ -1466,23 +1522,36 @@ export default function AppProvider({ children }: { children: ReactNode }) {
         }
       } catch {
         // Fallback: If Firebase Storage fails or is unavailable on Spark free plan
-        if (file.size <= 650_000) {
+        if (file.type.startsWith("image/")) {
+          try {
+            const { dataUrl, sizeStr } = await compressImageToSafeDataUrl(file)
+            if (dataUrl.length > 700_000) {
+              throw new Error("File is too large. Please record a shorter voice note or select a smaller image.")
+            }
+            return {
+              url: dataUrl,
+              name: file.name,
+              type: "image/jpeg",
+              size: sizeStr,
+            }
+          } catch (e: any) {
+            if (e?.message?.includes("File is too large")) throw e
+          }
+        }
+        if (file.size <= 500_000) {
           const dataUrl = await readFileAsDataUrl(file)
+          if (dataUrl.length > 700_000) {
+            throw new Error("File is too large. Please record a shorter voice note or select a smaller image.")
+          }
+          const sizeKb = Math.round(file.size / 1024)
           return {
             url: dataUrl,
             name: file.name,
             type: contentType,
-            size: formatSize,
+            size: `${sizeKb} KB`,
           }
         }
-        // For larger files: create browser object URL so current session can view/download
-        const objectUrl = URL.createObjectURL(file)
-        return {
-          url: objectUrl,
-          name: file.name,
-          type: contentType,
-          size: formatSize,
-        }
+        throw new Error("File is too large. Please record a shorter voice note or select a smaller image.")
       }
     },
     [authUser],
@@ -1494,6 +1563,9 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       if (peerId === authUser.uid) return "You cannot message yourself."
       const text = sanitizePlainText(body, 2000)
       if (!text && !attachment) return "Write a message or attach a file first."
+      if (attachment?.url && attachment.url.length > 700_000) {
+        return "File is too large. Please record a shorter voice note or select a smaller image."
+      }
       const now = new Date().toISOString()
       const conversationId = conversationIdFor(authUser.uid, peerId)
       const participantIds = [authUser.uid, peerId].sort()
@@ -1545,7 +1617,16 @@ export default function AppProvider({ children }: { children: ReactNode }) {
         }
 
         return null
-      } catch (error) {
+      } catch (error: any) {
+        const msg = String(error?.message || error || "")
+        if (
+          msg.includes("longer than 1048487 bytes") ||
+          msg.includes("longer than") ||
+          msg.includes("maximum size") ||
+          msg.includes("exceeds the maximum allowed size")
+        ) {
+          return "File is too large. Please record a shorter voice note or select a smaller image."
+        }
         return firebaseErrorMessage(error)
       }
     },

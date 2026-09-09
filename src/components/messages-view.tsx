@@ -201,7 +201,6 @@ export default function MessagesView({
     unreadIn,
     unreadCount,
     educatorById,
-    live,
     notify,
   } = useApp()
 
@@ -300,6 +299,7 @@ export default function MessagesView({
       const result = await sendMessage(activePeer, draft, attachment ?? undefined)
       if (result) {
         setError(result)
+        notify(result)
         return
       }
       setDraft("")
@@ -309,7 +309,9 @@ export default function MessagesView({
         textareaRef.current.style.height = "auto"
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not send that message. Please try again.")
+      const msg = err instanceof Error ? err.message : "Could not send that message. Please try again."
+      setError(msg)
+      notify(msg)
     } finally {
       setSending(false)
       textareaRef.current?.focus()
@@ -338,7 +340,9 @@ export default function MessagesView({
       setAttachment(att)
       notify(`Attached ${file.name}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not attach file.")
+      const msg = err instanceof Error ? err.message : "Could not attach file."
+      setError(msg)
+      notify(msg)
     } finally {
       setUploading(false)
       textareaRef.current?.focus()
@@ -350,14 +354,21 @@ export default function MessagesView({
     textareaRef.current?.focus()
   }
 
-  // Voice recording handlers
+  // Voice recording handlers (optimized 20kbps mono Opus, 3-min max limit)
   async function handleStartRecording() {
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         notify("Microphone recording is not supported on this browser.")
         return
       }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 24000,
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      })
       mediaStreamRef.current = stream
       audioChunksRef.current = []
 
@@ -369,7 +380,19 @@ export default function MessagesView({
         ? "audio/mp4"
         : ""
 
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+      const recorderOptions: MediaRecorderOptions = {
+        audioBitsPerSecond: 20_000,
+      }
+      if (mimeType) {
+        recorderOptions.mimeType = mimeType
+      }
+
+      let recorder: MediaRecorder
+      try {
+        recorder = new MediaRecorder(stream, recorderOptions)
+      } catch {
+        recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+      }
       mediaRecorderRef.current = recorder
 
       recorder.ondataavailable = (event) => {
@@ -387,7 +410,9 @@ export default function MessagesView({
       recordingTimerRef.current = window.setInterval(() => {
         const elapsed = Math.floor((Date.now() - start) / 1000)
         setRecordingSeconds(elapsed)
-        if (elapsed >= 120) {
+        // Strictly limit voice notes to 3 minutes (180 seconds)
+        if (elapsed >= 180) {
+          notify("Voice note reached the 3-minute limit. Sending now…")
           void handleSendRecording()
         }
       }, 500)
@@ -426,7 +451,7 @@ export default function MessagesView({
       recordingTimerRef.current = null
     }
 
-    const durationSecs = recordingSeconds
+    const durationSecs = Math.min(recordingSeconds, 180)
     const recorder = mediaRecorderRef.current
     const stream = mediaStreamRef.current
 
@@ -450,6 +475,12 @@ export default function MessagesView({
       const reader = new FileReader()
       reader.onloadend = async () => {
         const dataUrl = reader.result as string
+        if (dataUrl.length > 700_000) {
+          notify("File is too large. Please record a shorter voice note or select a smaller image.")
+          setIsRecording(false)
+          setRecordingSeconds(0)
+          return
+        }
         const min = Math.floor(durationSecs / 60)
         const sec = durationSecs % 60
         const durationFormatted = `${min}:${sec < 10 ? "0" : ""}${sec}`
@@ -467,11 +498,14 @@ export default function MessagesView({
           const res = await sendMessage(activePeer, "", voiceAtt)
           if (res) {
             setError(res)
+            notify(res)
           } else {
             notify("Voice note sent")
           }
         } catch (err) {
-          setError(err instanceof Error ? err.message : "Failed to send voice note.")
+          const msg = err instanceof Error ? err.message : "Failed to send voice note."
+          setError(msg)
+          notify(msg)
         } finally {
           setSending(false)
           setIsRecording(false)
@@ -506,7 +540,7 @@ export default function MessagesView({
 
   return (
     <main className="flex min-w-0 flex-1 flex-col px-4 py-6 sm:px-6 sm:py-8 lg:px-10">
-      {/* Title & Connection Header */}
+      {/* Title Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div>
           <div className="flex items-center gap-2">
@@ -522,24 +556,6 @@ export default function MessagesView({
           <p className="mt-1 text-sm text-muted">
             Private, real-time curriculum coordination and notes with verified educators.
           </p>
-        </div>
-
-        <div className="flex items-center gap-2 font-mono text-[11px] text-muted self-start sm:self-auto">
-          <span className="relative flex h-2 w-2">
-            <span
-              className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                live ? "animate-ping bg-emerald-400" : "bg-amber-400"
-              }`}
-            />
-            <span
-              className={`relative inline-flex h-2 w-2 rounded-full ${
-                live ? "bg-emerald-500" : "bg-amber-500"
-              }`}
-            />
-          </span>
-          <span className="font-medium text-ink">
-            {live ? "Faculty Network Active" : "Connecting…"}
-          </span>
         </div>
       </div>
 
@@ -984,68 +1000,79 @@ export default function MessagesView({
                 />
 
                 {isRecording ? (
-                  /* Live Voice Recording Bar */
-                  <div className="flex items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50/90 px-4 py-2.5 shadow-xs animate-in fade-in duration-150">
-                    <div className="flex items-center gap-3">
-                      <div className="relative flex h-3 w-3">
-                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
-                        <span className="relative inline-flex h-3 w-3 rounded-full bg-rose-600" />
+                  /* Sleek Minimalist Floating Audio Recorder Bar */
+                  <div className="flex items-center justify-between gap-2 sm:gap-3 rounded-2xl border border-line bg-surface/95 px-3 sm:px-4 py-2 sm:py-2.5 shadow-sm backdrop-blur-sm animate-in fade-in duration-150">
+                    <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                      {/* Gentle recording pulse */}
+                      <div className="relative flex h-2.5 w-2.5 shrink-0">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-60" />
+                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-rose-500" />
                       </div>
-                      <span className="text-xs font-semibold text-rose-900">Recording voice note…</span>
-                      <span className="font-mono text-xs font-bold text-rose-700">
-                        {Math.floor(recordingSeconds / 60)}:{(recordingSeconds % 60).toString().padStart(2, "0")}
+
+                      <span className="text-xs font-medium text-ink truncate hidden xs:inline">
+                        Recording voice note
                       </span>
-                      <span className="font-mono text-[10px] text-rose-500">/ 2:00</span>
-                      {/* Soundwave animation */}
+
+                      {/* Monospace timer with 3:00 max indication */}
+                      <div className="flex items-baseline gap-1 font-mono text-xs">
+                        <span className="font-semibold text-ink">
+                          {Math.floor(recordingSeconds / 60)}:{(recordingSeconds % 60).toString().padStart(2, "0")}
+                        </span>
+                        <span className="text-[10px] text-muted">/ 3:00</span>
+                      </div>
+
+                      {/* Elegant soundwave animation */}
                       <div className="hidden sm:flex items-center gap-0.5 h-4 ml-1">
-                        {[40, 80, 100, 60, 90, 50, 75, 45].map((h, i) => (
+                        {[35, 75, 100, 50, 90, 40, 85, 60, 30, 70].map((h, i) => (
                           <span
                             key={i}
-                            className="w-1 bg-rose-500 rounded-full animate-pulse"
+                            className="w-0.5 rounded-full bg-navy/60 animate-pulse"
                             style={{
                               height: `${h}%`,
-                              animationDelay: `${i * 120}ms`,
-                              animationDuration: "750ms",
+                              animationDelay: `${i * 100}ms`,
+                              animationDuration: "800ms",
                             }}
                           />
                         ))}
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    {/* Action buttons */}
+                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                       <button
                         type="button"
                         onClick={handleCancelRecording}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 transition shadow-2xs"
+                        className="inline-flex items-center gap-1 sm:gap-1.5 rounded-xl border border-line bg-canvas px-2.5 sm:px-3 py-1.5 text-xs font-medium text-muted hover:text-ink hover:bg-black/5 transition active:scale-95"
                         title="Discard voice recording"
                       >
                         <Icons.Trash className="h-3.5 w-3.5" />
-                        <span>Discard</span>
+                        <span className="hidden sm:inline">Discard</span>
                       </button>
 
                       <button
                         type="button"
+                        disabled={sending}
                         onClick={handleSendRecording}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-rose-700 transition active:scale-95"
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-navy px-3 sm:px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-navy-hover transition active:scale-98 disabled:opacity-50"
                         title="Send voice note"
                       >
                         <Icons.Send className="h-3.5 w-3.5" />
-                        <span>Send Audio</span>
+                        <span>{sending ? "Sending…" : "Send"}</span>
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <form onSubmit={handleSend} className="flex items-end gap-2">
+                  <form onSubmit={handleSend} className="flex items-end gap-1.5 sm:gap-2">
                     {/* Emoji Trigger Button */}
                     <button
                       type="button"
                       onClick={() => setEmojiOpen((prev) => !prev)}
-                      className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl transition ${
+                      className={`grid h-9 w-9 sm:h-10 sm:w-10 shrink-0 place-items-center rounded-xl sm:rounded-2xl transition ${
                         emojiOpen ? "bg-navy/10 text-navy" : "text-muted hover:bg-canvas hover:text-ink"
                       }`}
                       title="Insert emoji"
                     >
-                      <Icons.Smile className="h-5 w-5" />
+                      <Icons.Smile className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
                     </button>
 
                     {/* Attachment Trigger Button */}
@@ -1053,10 +1080,10 @@ export default function MessagesView({
                       type="button"
                       disabled={uploading}
                       onClick={() => fileInputRef.current?.click()}
-                      className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-muted hover:bg-canvas hover:text-ink transition disabled:opacity-50"
+                      className="grid h-9 w-9 sm:h-10 sm:w-10 shrink-0 place-items-center rounded-xl sm:rounded-2xl text-muted hover:bg-canvas hover:text-ink transition disabled:opacity-50"
                       title="Attach document or media"
                     >
-                      <Icons.Paperclip className="h-5 w-5" />
+                      <Icons.Paperclip className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
                     </button>
 
                     {/* Voice Note Recording Trigger */}
@@ -1064,14 +1091,14 @@ export default function MessagesView({
                       type="button"
                       disabled={sending || uploading}
                       onClick={handleStartRecording}
-                      className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-muted hover:bg-canvas hover:text-navy transition disabled:opacity-50"
+                      className="grid h-9 w-9 sm:h-10 sm:w-10 shrink-0 place-items-center rounded-xl sm:rounded-2xl text-muted hover:bg-canvas hover:text-navy transition disabled:opacity-50"
                       title="Record voice note"
                     >
-                      <Icons.Mic className="h-5 w-5" />
+                      <Icons.Mic className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
                     </button>
 
                     {/* Message Input with sleek Type a message... placeholder */}
-                    <div className="relative flex-1">
+                    <div className="relative min-w-0 flex-1">
                       <textarea
                         ref={textareaRef}
                         rows={1}
@@ -1085,7 +1112,7 @@ export default function MessagesView({
                         }}
                         onKeyDown={handleKeyDown}
                         disabled={sending}
-                        className="min-h-[44px] max-h-32 w-full resize-none rounded-2xl border border-line bg-canvas/80 px-4 py-2.5 text-sm text-ink outline-none transition placeholder:text-muted/70 hover:border-line-strong focus:border-navy focus:bg-surface focus:shadow-2xs disabled:opacity-60 leading-relaxed"
+                        className="min-h-[38px] sm:min-h-[42px] max-h-32 w-full resize-none rounded-xl sm:rounded-2xl border border-line bg-canvas/80 px-3 sm:px-4 py-2 text-xs sm:text-sm text-ink outline-none transition placeholder:text-muted/70 hover:border-line-strong focus:border-navy focus:bg-surface focus:shadow-2xs disabled:opacity-60 leading-relaxed"
                         placeholder={uploading ? "Uploading attachment…" : "Type a message..."}
                       />
                     </div>
@@ -1094,10 +1121,10 @@ export default function MessagesView({
                     <button
                       type="submit"
                       disabled={sending || uploading || (!draft.trim() && !attachment)}
-                      className="inline-flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-2xl bg-navy px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-navy-hover active:scale-98 disabled:opacity-40"
+                      className="inline-flex h-9 sm:h-10 shrink-0 items-center justify-center gap-1 sm:gap-1.5 rounded-xl sm:rounded-2xl bg-navy px-3 sm:px-4 text-xs sm:text-sm font-semibold text-white shadow-sm transition hover:bg-navy-hover active:scale-98 disabled:opacity-40"
                       title="Send message"
                     >
-                      <Icons.Send className="h-4 w-4" />
+                      <Icons.Send className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                       <span className="hidden sm:inline">{sending ? "Sending…" : "Send"}</span>
                     </button>
                   </form>

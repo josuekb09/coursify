@@ -96,9 +96,8 @@ export default function AdminAnalyticsView() {
             <span className="rounded bg-navy/10 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-navy">
               Creator Admin Portal
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 font-mono text-[10px] font-semibold text-emerald-700">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Live Network Metrics
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-0.5 font-mono text-[10px] font-semibold text-slate-700 border border-slate-200/80">
+              Platform Metrics
             </span>
           </div>
           <h1 className="mt-2 font-display text-2xl font-bold tracking-[-0.03em] text-ink sm:text-3xl">
