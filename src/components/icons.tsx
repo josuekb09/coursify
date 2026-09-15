@@ -449,6 +449,23 @@ function Stop(p: IconProps) {
   )
 }
 
+function Globe(p: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
+      <circle cx="10" cy="10" r="7.5" />
+      <path d="M2.5 10h15M10 2.5a11.5 11.5 0 0 1 0 15 11.5 11.5 0 0 1 0-15Z" />
+    </svg>
+  )
+}
+
+function Folder(p: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
+      <path d="M2.5 5.5A1.5 1.5 0 0 1 4 4h3.5a1.5 1.5 0 0 1 1.2.6L9.8 6H16a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 16 16H4a1.5 1.5 0 0 1-1.5-1.5V5.5Z" />
+    </svg>
+  )
+}
+
 const Icons = {
   Calendar,
   Grid,
@@ -496,6 +513,8 @@ const Icons = {
   Play,
   Pause,
   Stop,
+  Globe,
+  Folder,
 }
 
 export default Icons

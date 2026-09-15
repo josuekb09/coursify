@@ -1,6 +1,7 @@
 import Avatar from "@/components/avatar"
 import Icons from "@/components/icons"
 import Logo from "@/components/logo"
+import { isFounderEmail } from "@/security"
 import { useApp } from "@/store"
 import type { View } from "@/types"
 import { rankEducatorSearchResults } from "@/utils"
@@ -208,7 +209,11 @@ export default function Header({
                 ) : null}
               </span>
               <span className="block font-mono text-[10px] uppercase tracking-wide text-muted">
-                {currentUser.verified ? "Verified educator" : "Educator"}
+                {isFounderEmail(currentUser.email)
+                  ? "Founder · Verified"
+                  : currentUser.verified
+                    ? "Verified educator"
+                    : "Educator"}
               </span>
             </span>
           </button>

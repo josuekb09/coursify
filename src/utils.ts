@@ -1,4 +1,5 @@
 import type { Educator, ProfileTab, Resource, ResourceKind } from "@/types"
+import { dataUrlToBlob } from "@/documents"
 
 export function downloadBlob(filename: string, blob: Blob) {
   const url = URL.createObjectURL(blob)
@@ -16,6 +17,15 @@ export function downloadTextFile(filename: string, content: string) {
 }
 
 export function downloadDataUrl(filename: string, dataUrl: string) {
+  if (dataUrl.startsWith("data:")) {
+    try {
+      const blob = dataUrlToBlob(dataUrl)
+      downloadBlob(filename, blob)
+      return
+    } catch {
+      // Fallback to direct anchor navigation
+    }
+  }
   const anchor = document.createElement("a")
   anchor.href = dataUrl
   anchor.download = filename
@@ -24,8 +34,23 @@ export function downloadDataUrl(filename: string, dataUrl: string) {
   anchor.remove()
 }
 
-export function resourceFilename(title: string) {
-  return `${title.replace(/[^\w]+/g, "_")}.txt`
+export function resourceFilename(title: string, format?: string, originalName?: string): string {
+  if (originalName) return originalName
+  const cleanTitle = title.replace(/[^\w.-]+/g, "_").trim() || "resource"
+  switch (format) {
+    case "slides":
+      return `${cleanTitle}.pptx`
+    case "document":
+      return `${cleanTitle}.pdf`
+    case "spreadsheet":
+      return `${cleanTitle}.xlsx`
+    case "code":
+      return `${cleanTitle}.zip`
+    case "video":
+      return `${cleanTitle}.mp4`
+    default:
+      return `${cleanTitle}.pdf`
+  }
 }
 
 export function initialsFromName(name: string) {
@@ -217,67 +242,39 @@ export function isUpcomingEvent(iso: string) {
   return new Date(iso).getTime() >= Date.now() - 60 * 60 * 1000
 }
 
-export function deliverResource(resource: Resource, author: string) {
-  if (resource.fileData && resource.fileName) {
-    downloadDataUrl(resource.fileName, resource.fileData)
-    return "download" as const
+export function deliverResource(resource: Resource, author: string): "download" | "open" {
+  const targetName = resource.fileName || resourceFilename(resource.title, resource.format)
+
+  if (resource.fileData) {
+    downloadDataUrl(targetName, resource.fileData)
+    return "download"
   }
+
   const isDirectUrl =
     Boolean(resource.fileUrl) &&
     (resource.fileUrl!.startsWith("http://") ||
       resource.fileUrl!.startsWith("https://") ||
       resource.fileUrl!.startsWith("blob:") ||
       resource.fileUrl!.startsWith("data:"))
+
   if (isDirectUrl && resource.fileUrl) {
     const anchor = document.createElement("a")
     anchor.href = resource.fileUrl
-    anchor.download = resource.fileName ?? resource.title
+    anchor.download = targetName
     anchor.target = "_blank"
     anchor.rel = "noopener noreferrer"
     document.body.appendChild(anchor)
     anchor.click()
     anchor.remove()
-    return "download" as const
+    return "download"
   }
+
   if (resource.sourceUrl && (resource.sourceUrl.startsWith("http://") || resource.sourceUrl.startsWith("https://"))) {
     window.open(resource.sourceUrl, "_blank", "noopener,noreferrer")
-    return "open" as const
+    return "open"
   }
-  if (resource.slides && resource.slides.length > 0) {
-    const slideLines = [
-      `# ${resource.title}`,
-      `${resource.subject} · ${resource.grade}`,
-      `Author: ${author}`,
-      "",
-      "---",
-      "",
-      ...resource.slides.flatMap((slide, idx) => [
-        `## Slide ${idx + 1}: ${slide.title}`,
-        slide.subtitle ? `_${slide.subtitle}_` : "",
-        ...(slide.bullets?.map((b) => `• ${b}`) ?? []),
-        "",
-      ]),
-    ].filter(Boolean)
-    downloadTextFile(
-      resourceFilename(resource.fileName ? resource.fileName.replace(/\.[^.]+$/, ".txt") : resource.title),
-      slideLines.join("\n"),
-    )
-    return "download" as const
-  }
-  downloadTextFile(
-    resourceFilename(resource.fileName ?? resource.title),
-    [
-      `# ${resource.title}`,
-      `${resource.subject} · ${resource.grade}`,
-      `By ${author}`,
-      resource.fileName ? `File: ${resource.fileName} (${resource.fileSize ?? ""})` : "",
-      "",
-      "This resource is indexed in your Coursify library.",
-    ]
-      .filter(Boolean)
-      .join("\n"),
-  )
-  return "download" as const
+
+  return "download"
 }
 
 export function isEducatorOnline(lastActiveAt?: string | null): boolean {

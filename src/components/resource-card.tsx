@@ -64,12 +64,8 @@ export default function ResourceCard({
   return (
     <>
       <article
-        className={`group flex flex-col rounded-xl border border-line bg-surface p-5 transition-all hover:border-line-strong hover:-translate-y-0.5 ${
-          isSlides && !hasSlidePreview ? "" : "cursor-pointer"
-        }`}
-        onClick={() => {
-          if (!isSlides || hasSlidePreview) setPreviewOpen(true)
-        }}
+        className="group flex flex-col rounded-xl border border-line bg-surface p-5 transition-all hover:border-line-strong hover:-translate-y-0.5 cursor-pointer"
+        onClick={() => setPreviewOpen(true)}
       >
         <div className="flex items-center justify-between gap-2">
           <span
@@ -135,16 +131,14 @@ export default function ResourceCard({
             {resource.downloads.toLocaleString()}
           </span>
           <div className="flex flex-wrap items-center justify-end gap-1.5">
-            {!isSlides || hasSlidePreview ? (
-              <button
-                type="button"
-                onClick={() => setPreviewOpen(true)}
-                className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-line px-2.5 py-2 text-[13px] font-medium text-ink hover:border-line-strong"
-              >
-                <Icons.Eye className="h-4 w-4 text-navy" />
-                Preview
-              </button>
-            ) : null}
+            <button
+              type="button"
+              onClick={() => setPreviewOpen(true)}
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-line px-2.5 py-2 text-[13px] font-medium text-ink hover:border-line-strong"
+            >
+              <Icons.Eye className="h-4 w-4 text-navy" />
+              Preview
+            </button>
             <button
               type="button"
               aria-label={saved ? "Unsave resource" : "Save resource"}

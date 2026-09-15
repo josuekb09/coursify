@@ -32,6 +32,8 @@ import type {
   UploadInput,
 } from "@/types"
 import { isZipBytes, parsePptx } from "@/documents"
+import { extensionOf } from "@/formats"
+import { blobToDataUrl, deleteVaultFile, getVaultFile, saveVaultFile } from "@/file-vault"
 import { conversationIdFor, initialsFromName, isEducatorOnline, isHttpUrl, kindLabel, uid } from "@/utils"
 import { playMessageChime } from "@/sound"
 import { dispatchOfflineEmailNotification } from "@/notifications"
@@ -158,8 +160,8 @@ function toEducator(id: string, data: Record<string, unknown>): Educator {
     joinedYear: Number(data.joinedYear) || new Date().getFullYear(),
     createdAt: String(data.createdAt ?? new Date().toISOString()),
     storageBytes: Number(data.storageBytes) || 0,
-    verified: isFounderEmail(String(data.email ?? "")) || data.badgeClaimed === true,
-    badgeClaimed: data.badgeClaimed === true,
+    verified: isFounderEmail(String(data.email ?? "")) || data.badgeClaimed === true || data.verified === true,
+    badgeClaimed: isFounderEmail(String(data.email ?? "")) || data.badgeClaimed === true,
     institutionLevel: isInstitutionLevel(data.institutionLevel) ? data.institutionLevel : "high-school",
     photoData: typeof data.photoData === "string" ? data.photoData : undefined,
     lastActiveAt: typeof data.lastActiveAt === "string" ? data.lastActiveAt : undefined,
@@ -347,10 +349,13 @@ function mergeEducator(base: Educator | undefined, next: Educator): Educator {
     ...next,
     name: next.name && next.name !== "Educator" ? next.name : base.name,
     initials: next.initials && next.initials !== "E" ? next.initials : base.initials,
-    school: next.school.trim() ? next.school : base.school,
-    bio: next.bio.trim() ? next.bio : base.bio,
-    photoData: next.photoData || base.photoData,
+    school: next.school !== undefined ? next.school : base.school,
+    bio: next.bio !== undefined ? next.bio : base.bio,
+    photoData: next.photoData !== undefined ? next.photoData : base.photoData,
+    institutionLevel: next.institutionLevel || base.institutionLevel,
     storageBytes: next.storageBytes || base.storageBytes,
+    verified: isFounderEmail(next.email) || next.badgeClaimed === true || next.verified === true || base.verified === true,
+    badgeClaimed: isFounderEmail(next.email) || next.badgeClaimed === true || base.badgeClaimed === true,
     lastActiveAt: next.lastActiveAt || base.lastActiveAt,
   }
 }
@@ -1234,7 +1239,45 @@ export default function AppProvider({ children }: { children: ReactNode }) {
 
         if (input.file) {
           const fileName = input.file.name.replace(/[\\/#?\[\]]/g, "_")
-          const contentType = input.file.type || "application/octet-stream"
+          const ext = extensionOf(input.file.name)
+          const contentType =
+            input.file.type ||
+            (ext === "pdf"
+              ? "application/pdf"
+              : ext === "pptx"
+                ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                : ext === "ppt"
+                  ? "application/vnd.ms-powerpoint"
+                  : ext === "docx"
+                    ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    : ext === "doc"
+                      ? "application/msword"
+                      : ext === "xlsx"
+                        ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        : ext === "xls"
+                          ? "application/vnd.ms-excel"
+                          : ext === "csv"
+                            ? "text/csv"
+                            : ext === "zip"
+                              ? "application/zip"
+                              : ext === "mp4"
+                                ? "video/mp4"
+                                : ext === "webm"
+                                  ? "video/webm"
+                                  : ext === "json"
+                                    ? "application/json"
+                                    : ext === "txt"
+                                      ? "text/plain"
+                                      : ext === "py"
+                                        ? "text/x-python"
+                                        : ext === "js"
+                                          ? "text/javascript"
+                                          : ext === "ts"
+                                            ? "text/typescript"
+                                            : "application/octet-stream")
+
+          // Always persist into client-side IndexedDB vault for guaranteed authentic retention
+          await saveVaultFile(resourceId, input.file, fileName, contentType)
 
           // Check if PPTX / slides
           if (input.file.name.toLowerCase().endsWith(".pptx") || input.format === "slides") {
@@ -1284,7 +1327,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
           grade: input.grade,
           kind: input.kind,
           format: input.format,
-          mimeType: input.file?.type || undefined,
+          mimeType: input.file ? (input.file.type || undefined) : undefined,
           type: displayType(kindLabel(input.kind), {
             format: input.format,
             fileName: input.file?.name,
@@ -1339,6 +1382,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       if (!resource || resource.authorId !== authUser.uid) return
       void (async () => {
         try {
+          void deleteVaultFile(id)
           if (resource.storagePath) {
             await deleteObject(storageRef(getFirebaseStorage(), resource.storagePath)).catch(() => undefined)
           }
@@ -1363,6 +1407,31 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       if (!resource) return undefined
       if (resource.fileData || hydratedFiles[id]) {
         return { ...resource, fileData: resource.fileData ?? hydratedFiles[id], hasFile: true }
+      }
+      try {
+        const vaulted = await getVaultFile(id)
+        if (vaulted) {
+          const fileData = await blobToDataUrl(vaulted.blob)
+          setHydratedFiles((current) => ({ ...current, [id]: fileData }))
+          return {
+            ...resource,
+            fileData,
+            fileName: resource.fileName || vaulted.fileName,
+            mimeType: resource.mimeType || vaulted.mimeType,
+            hasFile: true,
+          }
+        }
+      } catch {
+        // Vault fallback
+      }
+      if (resource.storagePath && (!resource.fileUrl || resource.fileUrl.startsWith("coursify-cloud-storage://"))) {
+        try {
+          const fileRef = storageRef(getFirebaseStorage(), resource.storagePath)
+          const downloadUrl = await getDownloadURL(fileRef)
+          return { ...resource, fileUrl: downloadUrl, hasFile: true }
+        } catch {
+          // Storage fetch fallback
+        }
       }
       if (!resource.fileUrl || resource.fileUrl.startsWith("coursify-cloud-storage://")) return resource
       try {
@@ -1785,8 +1854,11 @@ export default function AppProvider({ children }: { children: ReactNode }) {
   )
 
   const educatorLookup = useCallback(
-    (id: string) => educators.find((educator) => educator.id === id),
-    [educators],
+    (id: string) => {
+      if (currentUser && currentUser.id === id) return currentUser
+      return educators.find((educator) => educator.id === id)
+    },
+    [currentUser, educators],
   )
 
   const authorName = useCallback(

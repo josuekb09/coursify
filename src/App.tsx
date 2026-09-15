@@ -198,6 +198,7 @@ export default function App() {
             onUpload={() => setUploadOpen(true)}
             onDiscover={() => goNav("discover")}
             onMessage={goMessages}
+            onSubjects={() => goNav("subjects")}
           />
         ) : null}
         {view === "discover" ? (

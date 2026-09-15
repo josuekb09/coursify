@@ -12,12 +12,14 @@ export default function Dashboard({
   onUpload,
   onDiscover,
   onMessage,
+  onSubjects,
 }: {
   query: string
   onAuthor: (id: string) => void
   onUpload: () => void
   onDiscover: () => void
   onMessage: (id: string) => void
+  onSubjects?: () => void
 }) {
   const {
     currentUser,
@@ -134,6 +136,15 @@ export default function Dashboard({
             >
               Discover colleagues
             </button>
+            {onSubjects ? (
+              <button
+                type="button"
+                onClick={onSubjects}
+                className="min-h-11 rounded-lg border border-white/25 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white/10"
+              >
+                Curriculum by subject
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={onUpload}

@@ -223,7 +223,7 @@ function PreviewCanvas({ resource, author }: { resource: Resource; author: strin
   }
 
   if (media && isPdfResource(resource)) {
-    if (media.startsWith("http")) {
+    if (media.startsWith("http") || media.startsWith("blob:")) {
       return (
         <div className="overflow-hidden rounded-xl border border-line bg-surface">
           <iframe
@@ -334,7 +334,7 @@ function PreviewCanvas({ resource, author }: { resource: Resource; author: strin
     return (
       <FileNotice
         title={resource.fileName ?? resource.title}
-        body="Slide preview is not available yet. Download the file to open it in PowerPoint, Keynote, or your preferred presentation app."
+        body="Presentation slides are stored in native format. Download to open the deck in PowerPoint, Keynote, or Google Slides."
         meta={resource.fileSize ? `${resource.fileSize} · ${resource.grade}` : resource.grade}
       />
     )
@@ -360,10 +360,25 @@ function PreviewCanvas({ resource, author }: { resource: Resource; author: strin
   }
 
   if (resource.format === "code") {
+    const isArchive = !resource.fileName || resource.fileName.endsWith(".zip")
+    if (!isArchive && resource.fileData) {
+      const codeText = decodeDataUrlText(resource.fileData)
+      return (
+        <article className="rounded-xl border border-line bg-surface p-5 sm:p-6">
+          <div className="flex items-center justify-between border-b border-line pb-3">
+            <span className="font-mono text-xs font-semibold text-navy">{resource.fileName}</span>
+            <span className="font-mono text-[11px] text-muted">{resource.fileSize}</span>
+          </div>
+          <pre className="mt-4 max-h-[500px] overflow-auto rounded-lg bg-slate-900 p-4 font-mono text-xs leading-relaxed text-slate-100">
+            <code>{codeText || "// Empty file"}</code>
+          </pre>
+        </article>
+      )
+    }
     return (
       <FileNotice
         title={resource.fileName ?? "Project archive"}
-        body="ZIP archives stay in your Coursify library. Download to unpack the project on your machine."
+        body="Code archives stay in your Coursify library. Download to unpack the project on your machine."
         meta={resource.fileSize}
       />
     )
