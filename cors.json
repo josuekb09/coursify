@@ -1,0 +1,13 @@
+[
+  {
+    "origin": [
+      "https://coursify-a1a0d.web.app",
+      "https://coursify-a1a0d.firebaseapp.com",
+      "http://localhost:8443",
+      "http://127.0.0.1:8443"
+    ],
+    "method": ["GET", "HEAD"],
+    "responseHeader": ["Content-Type", "Content-Length", "Content-Disposition"],
+    "maxAgeSeconds": 3600
+  }
+]

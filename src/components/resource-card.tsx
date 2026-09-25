@@ -39,7 +39,7 @@ export default function ResourceCard({
     try {
       const next = await downloadResource(resource.id)
       const current = next ?? resource
-      const action = deliverResource(current, author)
+      const action = await deliverResource(current)
       notify(action === "open" ? `Opening ${current.title}` : `Downloading ${current.title}`)
     } catch (error) {
       notify(error instanceof Error ? error.message : "Could not download that resource. Please try again.")
@@ -84,6 +84,16 @@ export default function ResourceCard({
         <h3 className="mt-4 font-display text-[16px] font-semibold leading-snug tracking-[-0.01em] text-ink">
           {resource.title}
         </h3>
+
+        {resource.localOnly ? (
+          <p
+            className="mt-2 inline-flex w-fit items-center gap-1.5 rounded-md bg-[#fbf3e6] px-2 py-1 text-[11px] font-medium text-[#8a5a1c]"
+            title="Cloud storage was unreachable when this was uploaded. Upload it again to share it across devices."
+          >
+            <Icons.Alert className="h-3.5 w-3.5" />
+            {isOwner ? "Saved on this device only" : "Only on the author's device"}
+          </p>
+        ) : null}
 
         {!compact ? (
           <button

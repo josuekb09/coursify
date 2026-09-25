@@ -67,6 +67,8 @@ export type Resource = {
   fileData?: string
   fileUrl?: string
   storagePath?: string
+  /** The file never reached cloud storage; only the uploader's browser holds the bytes. */
+  localOnly?: boolean
   sourceUrl?: string
   slides?: Slide[]
   createdAt: string
@@ -86,6 +88,9 @@ export type Conversation = {
   participantIds: [string, string]
   updatedAt: string
   lastReadAt: Record<string, string>
+  lastMessage?: string
+  /** Per-participant ISO time of their last keystroke in the composer. */
+  typingAt: Record<string, string>
 }
 
 export type ChatAttachment = {
@@ -105,8 +110,12 @@ export type ChatMessage = {
   attachmentName?: string
   attachmentType?: string
   attachmentSize?: string
-  status?: "sent" | "delivered" | "read"
+  /** Set locally while the write has not been acknowledged by Firestore yet. */
+  pending?: boolean
 }
+
+/** Delivery state shown on outgoing messages, derived from the peer's presence and lastReadAt. */
+export type MessageStatus = "sending" | "sent" | "delivered" | "read"
 
 export type SignupInput = {
   name: string

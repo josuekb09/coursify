@@ -1,184 +1,48 @@
 import Avatar from "@/components/avatar"
+import {
+  EmojiPicker,
+  FileAttachment,
+  ImageAttachment,
+  ImageLightbox,
+  StatusTicks,
+  VoiceNote,
+  formatClock,
+  formatDayDivider,
+  formatListTime,
+  isImageAttachment,
+  isVoiceNote,
+  messageStatus,
+  sameDay,
+} from "@/components/chat/chat-parts"
 import Icons from "@/components/icons"
 import { MAX_FILE_BYTES } from "@/data"
 import { isFounderEmail } from "@/security"
 import { useApp } from "@/store"
-import type { ChatAttachment } from "@/types"
-import { educatorMatchesQuery, formatEducatorActivity, isEducatorOnline } from "@/utils"
-import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react"
+import type { ChatAttachment, ChatMessage, Educator } from "@/types"
+import { educatorMatchesQuery, formatBytes, formatEducatorActivity, isEducatorOnline } from "@/utils"
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react"
 
-import { EMOJI_CATALOG, searchEmojis } from "@/emojis"
+const VOICE_LIMIT_SECONDS = 180
+// Consecutive messages from one sender within this window share a bubble group.
+const GROUP_WINDOW_MS = 5 * 60_000
+const TYPING_FRESH_MS = 6_000
 
-function AudioMessageBubble({
-  url,
-  name,
-  durationText,
-  mine,
-}: {
-  url: string
-  name?: string
-  durationText?: string
-  mine: boolean
-}) {
-  const audioRef = useRef<HTMLAudioElement>(null)
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [currentTime, setCurrentTime] = useState(0)
-  const [duration, setDuration] = useState(0)
-
-  useEffect(() => {
-    const audio = audioRef.current
-    if (!audio) return
-
-    const onTimeUpdate = () => setCurrentTime(audio.currentTime)
-    const onLoadedMetadata = () => {
-      if (Number.isFinite(audio.duration)) setDuration(audio.duration)
-    }
-    const onEnded = () => {
-      setIsPlaying(false)
-      setCurrentTime(0)
-    }
-    const onPlay = () => setIsPlaying(true)
-    const onPause = () => setIsPlaying(false)
-
-    audio.addEventListener("timeupdate", onTimeUpdate)
-    audio.addEventListener("loadedmetadata", onLoadedMetadata)
-    audio.addEventListener("ended", onEnded)
-    audio.addEventListener("play", onPlay)
-    audio.addEventListener("pause", onPause)
-
-    return () => {
-      audio.removeEventListener("timeupdate", onTimeUpdate)
-      audio.removeEventListener("loadedmetadata", onLoadedMetadata)
-      audio.removeEventListener("ended", onEnded)
-      audio.removeEventListener("play", onPlay)
-      audio.removeEventListener("pause", onPause)
-    }
-  }, [url])
-
-  const togglePlay = () => {
-    const audio = audioRef.current
-    if (!audio) return
-    if (isPlaying) {
-      audio.pause()
-    } else {
-      void audio.play().catch(() => setIsPlaying(false))
-    }
-  }
-
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = Number(e.target.value)
-    if (audioRef.current) {
-      audioRef.current.currentTime = val
-      setCurrentTime(val)
-    }
-  }
-
-  const formatSecs = (sec: number) => {
-    if (!Number.isFinite(sec) || sec <= 0) return "0:00"
-    const m = Math.floor(sec / 60)
-    const s = Math.floor(sec % 60)
-    return `${m}:${s < 10 ? "0" : ""}${s}`
-  }
-
-  const effectiveDuration = duration > 0 ? duration : 0
-  const progressPercent = effectiveDuration > 0 ? (currentTime / effectiveDuration) * 100 : 0
-
-  return (
-    <div
-      className={`flex items-center gap-3 rounded-2xl p-2.5 transition-all select-none ${
-        mine
-          ? "bg-white/12 text-white border border-white/15"
-          : "bg-surface text-ink border border-line shadow-2xs"
-      }`}
-    >
-      <audio ref={audioRef} src={url} preload="metadata" />
-
-      {/* Play/Pause Button */}
-      <button
-        type="button"
-        onClick={togglePlay}
-        className={`grid h-10 w-10 shrink-0 place-items-center rounded-full transition-transform active:scale-95 shadow-sm ${
-          mine
-            ? "bg-white text-navy hover:bg-white/90"
-            : "bg-navy text-white hover:bg-navy-hover"
-        }`}
-        aria-label={isPlaying ? "Pause voice note" : "Play voice note"}
-      >
-        {isPlaying ? <Icons.Pause className="h-4 w-4" /> : <Icons.Play className="h-4 w-4 ml-0.5" />}
-      </button>
-
-      {/* Waveform track & timing */}
-      <div className="flex-1 min-w-[140px] sm:min-w-[180px]">
-        <div className="flex items-center justify-between text-[10px] font-mono mb-1">
-          <span className={mine ? "text-white/80" : "text-muted"}>
-            {formatSecs(currentTime)}
-          </span>
-          <span className={mine ? "text-white/60" : "text-muted/80"}>
-            {effectiveDuration > 0 ? formatSecs(effectiveDuration) : (durationText || name || "Voice note")}
-          </span>
-        </div>
-
-        {/* Interactive scrubber */}
-        <div className="relative flex items-center group">
-          <input
-            type="range"
-            min={0}
-            max={effectiveDuration || 100}
-            step={0.1}
-            value={currentTime}
-            onChange={handleSeek}
-            className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-navy bg-transparent z-10 opacity-0 group-hover:opacity-100 transition-opacity"
-            aria-label="Seek audio"
-          />
-          {/* Custom visual progress track */}
-          <div className="absolute inset-0 flex items-center pointer-events-none">
-            <div
-              className={`h-1.5 w-full rounded-full overflow-hidden ${
-                mine ? "bg-white/25" : "bg-slate-200"
-              }`}
-            >
-              <div
-                className={`h-full transition-all duration-75 ${
-                  mine ? "bg-white" : "bg-navy"
-                }`}
-                style={{ width: `${Math.min(100, Math.max(0, progressPercent))}%` }}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function formatChatSidebarTime(iso: string): string {
-  try {
-    const d = new Date(iso)
-    const now = new Date()
-    const diffMs = now.getTime() - d.getTime()
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-    if (diffDays === 0 && d.getDate() === now.getDate()) {
-      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
-    }
-    if (diffDays <= 1) {
-      return "Yesterday"
-    }
-    if (diffDays < 7) {
-      return d.toLocaleDateString([], { weekday: "short" })
-    }
-    return d.toLocaleDateString([], { month: "short", day: "numeric" })
-  } catch {
-    return iso.slice(11, 16)
-  }
-}
-
-function formatBubbleTime(iso: string): string {
-  try {
-    const d = new Date(iso)
-    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
-  } catch {
-    return iso.slice(11, 16)
-  }
+type StagedAttachment = {
+  file: File
+  previewUrl?: string
+  progress: number
+  ready?: ChatAttachment
+  controller: AbortController
 }
 
 export default function MessagesView({
@@ -197,391 +61,94 @@ export default function MessagesView({
     sendMessage,
     uploadChatAttachment,
     markConversationRead,
+    signalTyping,
+    conversationWith,
     messagesFor,
     unreadIn,
-    unreadCount,
     educatorById,
     notify,
   } = useApp()
 
   const [activePeer, setActivePeer] = useState<string | null>(peerId)
-  const [convoSearch, setConvoSearch] = useState("")
-  const [draft, setDraft] = useState("")
-  const [attachment, setAttachment] = useState<ChatAttachment | null>(null)
-  const [uploading, setUploading] = useState(false)
-  const [emojiOpen, setEmojiOpen] = useState(false)
-  const [emojiCategory, setEmojiCategory] = useState<string>("smileys")
-  const [emojiSearch, setEmojiSearch] = useState("")
-  const [error, setError] = useState<string | null>(null)
-  const [sending, setSending] = useState(false)
-
-  // Voice note recording state
-  const [isRecording, setIsRecording] = useState(false)
-  const [recordingSeconds, setRecordingSeconds] = useState(0)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const audioChunksRef = useRef<Blob[]>([])
-  const recordingTimerRef = useRef<number | null>(null)
-  const mediaStreamRef = useRef<MediaStream | null>(null)
-
-  const bottomRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const emojiPopoverRef = useRef<HTMLDivElement>(null)
+  const [search, setSearch] = useState("")
+  const [composing, setComposing] = useState(false)
 
   useEffect(() => {
     if (peerId) setActivePeer(peerId)
   }, [peerId])
 
-  // Cleanup media recording streams on unmount
-  useEffect(() => {
-    return () => {
-      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current)
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach((track) => track.stop())
-      }
-    }
-  }, [])
+  const me = currentUser?.id ?? ""
+  const needle = (search || query).trim().toLowerCase()
 
-  // Close emoji popover when clicking outside
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (emojiPopoverRef.current && !emojiPopoverRef.current.contains(e.target as Node)) {
-        setEmojiOpen(false)
-      }
-    }
-    if (emojiOpen) {
-      document.addEventListener("mousedown", handleClickOutside)
-    }
-    return () => document.removeEventListener("mousedown", handleClickOutside)
-  }, [emojiOpen])
+  const rows = useMemo(() => {
+    return [...conversations]
+      .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
+      .map((conversation) => {
+        const otherId = conversation.participantIds.find((id) => id !== me) ?? ""
+        const other = educatorById(otherId)
+        const last = messagesFor(conversation.id).at(-1)
+        return { conversation, other, last }
+      })
+      .filter((row): row is typeof row & { other: Educator } => Boolean(row.other))
+      .filter(({ other, last, conversation }) => {
+        if (!needle) return true
+        const preview = (last?.body ?? conversation.lastMessage ?? "").toLowerCase()
+        return educatorMatchesQuery(other, needle) || preview.includes(needle)
+      })
+  }, [conversations, educatorById, me, messagesFor, needle])
 
-  // Filter conversations in sidebar
-  const orderedConversations = useMemo(() => {
-    const list = [...conversations].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
-    const needle = (convoSearch || query).trim().toLowerCase()
-    if (!needle) return list
-    return list.filter((conversation) => {
-      const otherId = conversation.participantIds.find((id) => id !== currentUser?.id)
-      const other = otherId ? educatorById(otherId) : undefined
-      if (!other) return false
-      const matchesName = other.name.toLowerCase().includes(needle) || other.school.toLowerCase().includes(needle)
-      const lastMsg = messagesFor(conversation.id).at(-1)?.body.toLowerCase() ?? ""
-      const matchesMsg = lastMsg.includes(needle)
-      return matchesName || matchesMsg || educatorMatchesQuery(other, needle)
-    })
-  }, [conversations, convoSearch, currentUser?.id, educatorById, messagesFor, query])
+  const colleagues = useMemo(() => {
+    const pool = educators.filter((educator) => educator.id !== me)
+    const filtered = search.trim() ? pool.filter((educator) => educatorMatchesQuery(educator, search)) : pool
+    return filtered.sort((a, b) => a.name.localeCompare(b.name)).slice(0, 60)
+  }, [educators, me, search])
 
   const peer = activePeer ? educatorById(activePeer) : undefined
-  const isPeerCreator = peer ? isFounderEmail(peer.email) : false
-  const peerOnline = peer ? isEducatorOnline(peer.lastActiveAt) : false
-  const peerActivity = peer ? formatEducatorActivity(peer.lastActiveAt) : { isOnline: false, label: "Offline" }
-  const conversationId = orderedConversations.find((item) => item.participantIds.includes(activePeer ?? ""))?.id
-  const thread = conversationId ? messagesFor(conversationId) : []
-
-  // Mark read when thread opened
-  useEffect(() => {
-    if (conversationId && unreadIn(conversationId) > 0) {
-      markConversationRead(conversationId)
-    }
-  }, [conversationId, markConversationRead, thread.length, unreadIn])
-
-  // Auto-scroll on new message
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
-  }, [thread.length, activePeer])
-
-  async function handleSend(event?: FormEvent) {
-    if (event) event.preventDefault()
-    if (!activePeer || sending || (!draft.trim() && !attachment)) return
-    setSending(true)
-    setError(null)
-    try {
-      const result = await sendMessage(activePeer, draft, attachment ?? undefined)
-      if (result) {
-        setError(result)
-        notify(result)
-        return
-      }
-      setDraft("")
-      setAttachment(null)
-      setEmojiOpen(false)
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto"
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Could not send that message. Please try again."
-      setError(msg)
-      notify(msg)
-    } finally {
-      setSending(false)
-      textareaRef.current?.focus()
-    }
-  }
-
-  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      void handleSend()
-    }
-  }
-
-  async function handleFileSelect(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
-    if (!file) return
-    event.target.value = ""
-    if (file.size > MAX_FILE_BYTES) {
-      notify(`Attachments must be ${Math.round(MAX_FILE_BYTES / 1_048_576)}MB or smaller.`)
-      return
-    }
-    setUploading(true)
-    setError(null)
-    try {
-      const att = await uploadChatAttachment(file)
-      setAttachment(att)
-      notify(`Attached ${file.name}`)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Could not attach file."
-      setError(msg)
-      notify(msg)
-    } finally {
-      setUploading(false)
-      textareaRef.current?.focus()
-    }
-  }
-
-  function handleInsertEmoji(emoji: string) {
-    setDraft((prev) => prev + emoji)
-    textareaRef.current?.focus()
-  }
-
-  // Voice recording handlers (optimized 20kbps mono Opus, 3-min max limit)
-  async function handleStartRecording() {
-    try {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        notify("Microphone recording is not supported on this browser.")
-        return
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          sampleRate: 24000,
-          echoCancellation: true,
-          noiseSuppression: true,
-        },
-      })
-      mediaStreamRef.current = stream
-      audioChunksRef.current = []
-
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : MediaRecorder.isTypeSupported("audio/webm")
-        ? "audio/webm"
-        : MediaRecorder.isTypeSupported("audio/mp4")
-        ? "audio/mp4"
-        : ""
-
-      const recorderOptions: MediaRecorderOptions = {
-        audioBitsPerSecond: 20_000,
-      }
-      if (mimeType) {
-        recorderOptions.mimeType = mimeType
-      }
-
-      let recorder: MediaRecorder
-      try {
-        recorder = new MediaRecorder(stream, recorderOptions)
-      } catch {
-        recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
-      }
-      mediaRecorderRef.current = recorder
-
-      recorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-          audioChunksRef.current.push(event.data)
-        }
-      }
-
-      recorder.start(250)
-      setIsRecording(true)
-      setRecordingSeconds(0)
-
-      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current)
-      const start = Date.now()
-      recordingTimerRef.current = window.setInterval(() => {
-        const elapsed = Math.floor((Date.now() - start) / 1000)
-        setRecordingSeconds(elapsed)
-        // Strictly limit voice notes to 3 minutes (180 seconds)
-        if (elapsed >= 180) {
-          notify("Voice note reached the 3-minute limit. Sending now…")
-          void handleSendRecording()
-        }
-      }, 500)
-    } catch (err) {
-      console.error("Mic access error:", err)
-      notify("Microphone access was denied or is unavailable.")
-    }
-  }
-
-  function handleCancelRecording() {
-    if (recordingTimerRef.current) {
-      clearInterval(recordingTimerRef.current)
-      recordingTimerRef.current = null
-    }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      try {
-        mediaRecorderRef.current.stop()
-      } catch {
-        // ignore
-      }
-    }
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((t) => t.stop())
-      mediaStreamRef.current = null
-    }
-    audioChunksRef.current = []
-    setIsRecording(false)
-    setRecordingSeconds(0)
-  }
-
-  async function handleSendRecording() {
-    if (!mediaRecorderRef.current || !activePeer) return
-
-    if (recordingTimerRef.current) {
-      clearInterval(recordingTimerRef.current)
-      recordingTimerRef.current = null
-    }
-
-    const durationSecs = Math.min(recordingSeconds, 180)
-    const recorder = mediaRecorderRef.current
-    const stream = mediaStreamRef.current
-
-    recorder.onstop = async () => {
-      if (stream) {
-        stream.getTracks().forEach((t) => t.stop())
-        mediaStreamRef.current = null
-      }
-
-      const chunks = audioChunksRef.current
-      if (chunks.length === 0 || durationSecs < 1) {
-        notify("Voice message was too short.")
-        setIsRecording(false)
-        setRecordingSeconds(0)
-        return
-      }
-
-      const mime = recorder.mimeType || "audio/webm"
-      const blob = new Blob(chunks, { type: mime })
-
-      const reader = new FileReader()
-      reader.onloadend = async () => {
-        const dataUrl = reader.result as string
-        if (dataUrl.length > 700_000) {
-          notify("File is too large. Please record a shorter voice note or select a smaller image.")
-          setIsRecording(false)
-          setRecordingSeconds(0)
-          return
-        }
-        const min = Math.floor(durationSecs / 60)
-        const sec = durationSecs % 60
-        const durationFormatted = `${min}:${sec < 10 ? "0" : ""}${sec}`
-        const sizeStr = `${(blob.size / 1024).toFixed(1)} KB`
-
-        const voiceAtt: ChatAttachment = {
-          name: `Voice note (${durationFormatted})`,
-          url: dataUrl,
-          type: mime,
-          size: sizeStr,
-        }
-
-        setSending(true)
-        try {
-          const res = await sendMessage(activePeer, "", voiceAtt)
-          if (res) {
-            setError(res)
-            notify(res)
-          } else {
-            notify("Voice note sent")
-          }
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : "Failed to send voice note."
-          setError(msg)
-          notify(msg)
-        } finally {
-          setSending(false)
-          setIsRecording(false)
-          setRecordingSeconds(0)
-        }
-      }
-      reader.readAsDataURL(blob)
-    }
-
-    if (recorder.state !== "inactive") {
-      try {
-        recorder.stop()
-      } catch {
-        // ignore
-      }
-    }
-  }
-
-  const displayedEmojis: string[] = useMemo(() => {
-    if (emojiSearch.trim()) {
-      return searchEmojis(emojiSearch)
-    }
-    const cat = EMOJI_CATALOG.find((c) => c.id === emojiCategory)
-    return cat ? cat.emojis.map((e) => e.emoji) : EMOJI_CATALOG[0].emojis.map((e) => e.emoji)
-  }, [emojiCategory, emojiSearch])
-
-  const otherEducators = useMemo(() => {
-    const pool = educators.filter((e) => e.id !== currentUser?.id)
-    if (!convoSearch.trim()) return pool
-    return pool.filter((e) => educatorMatchesQuery(e, convoSearch))
-  }, [currentUser?.id, educators, convoSearch])
+  const { ref: mainRef, height } = useViewportFill<HTMLElement>()
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col px-4 py-6 sm:px-6 sm:py-8 lg:px-10">
-      {/* Title Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="font-display text-2xl font-bold tracking-tight text-ink sm:text-3xl">
-              Messages
-            </h1>
-            {unreadCount > 0 ? (
-              <span className="inline-flex items-center rounded-full bg-navy px-2.5 py-0.5 font-mono text-xs font-bold text-white shadow-2xs">
-                {unreadCount} new
-              </span>
-            ) : null}
-          </div>
-          <p className="mt-1 text-sm text-muted">
-            Private, real-time curriculum coordination and notes with verified educators.
-          </p>
-        </div>
-      </div>
-
-      {/* Main Container */}
-      <div className="mt-6 grid min-h-[min(74dvh,640px)] flex-1 grid-cols-1 overflow-hidden rounded-2xl border border-line bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.04)] lg:grid-cols-[320px_minmax(0,1fr)]">
-        {/* Sidebar: Conversations List */}
+    <main ref={mainRef} style={{ height }} className="flex min-h-[420px] min-w-0 flex-1 flex-col lg:p-6">
+      <div className="flex min-h-0 flex-1 overflow-hidden bg-surface lg:rounded-2xl lg:border lg:border-line lg:shadow-[0_1px_2px_rgba(18,20,28,0.04),0_12px_40px_rgba(18,20,28,0.05)]">
+        {/* ── Conversation list ── */}
         <aside
-          className={`flex flex-col border-b border-line bg-surface lg:block lg:border-b-0 lg:border-r ${
+          className={`min-h-0 w-full flex-col border-line lg:flex lg:w-[340px] lg:shrink-0 lg:border-r ${
             peer ? "hidden" : "flex"
           }`}
         >
-          {/* Sidebar Header & Search Filter */}
-          <div className="border-b border-line/70 p-3.5">
-            <div className="relative flex items-center">
-              <Icons.Search className="pointer-events-none absolute left-3.5 h-4 w-4 text-muted" />
+          <div className="px-4 pb-3 pt-4">
+            <div className="flex items-center justify-between">
+              <h1 className="font-display text-[22px] font-bold tracking-[-0.02em] text-ink">
+                {composing ? "New message" : "Messages"}
+              </h1>
+              <button
+                type="button"
+                onClick={() => {
+                  setComposing((value) => !value)
+                  setSearch("")
+                }}
+                className={`grid h-9 w-9 place-items-center rounded-full transition-colors ${
+                  composing ? "bg-navy text-white" : "bg-navy-soft text-navy hover:bg-navy hover:text-white"
+                }`}
+                aria-label={composing ? "Back to conversations" : "Start a new conversation"}
+                title={composing ? "Back" : "New message"}
+              >
+                {composing ? <Icons.Close className="h-4 w-4" /> : <Icons.Pencil className="h-4 w-4" />}
+              </button>
+            </div>
+            <div className="relative mt-3">
+              <Icons.Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
               <input
-                value={convoSearch}
-                onChange={(e) => setConvoSearch(e.target.value)}
-                placeholder="Search conversations or peers…"
-                className="h-10 w-full rounded-xl border border-line bg-canvas/70 pl-9 pr-8 text-xs text-ink outline-none transition-all placeholder:text-muted/70 focus:border-navy focus:bg-surface focus:shadow-2xs"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder={composing ? "Search colleagues by name, school or subject" : "Search messages"}
+                className="h-10 w-full rounded-xl bg-canvas pl-9 pr-9 text-[14px] text-ink outline-none transition-shadow placeholder:text-muted focus:shadow-[0_0_0_3px_rgba(26,43,74,0.10)]"
               />
-              {convoSearch ? (
+              {search ? (
                 <button
                   type="button"
-                  onClick={() => setConvoSearch("")}
-                  className="absolute right-2.5 grid h-5 w-5 place-items-center rounded-full text-muted hover:text-ink"
+                  onClick={() => setSearch("")}
+                  className="absolute right-2 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-full text-muted hover:bg-line hover:text-ink"
+                  aria-label="Clear search"
                 >
                   <Icons.Close className="h-3 w-3" />
                 </button>
@@ -589,572 +156,988 @@ export default function MessagesView({
             </div>
           </div>
 
-          {/* Threads List */}
-          <div className="flex-1 overflow-y-auto max-h-[min(55dvh,480px)] lg:max-h-[580px] divide-y divide-line/40">
-            {orderedConversations.map((conversation) => {
-              const otherId = conversation.participantIds.find((id) => id !== currentUser?.id)
-              const other = otherId ? educatorById(otherId) : undefined
-              if (!other) return null
-
-              const unread = unreadIn(conversation.id)
-              const last = messagesFor(conversation.id).at(-1)
-              const isSelected = activePeer === other.id
-              const isOtherCreator = isFounderEmail(other.email)
-              const lastIsMine = last?.senderId === currentUser?.id
-              const otherOnline = isEducatorOnline(other.lastActiveAt)
-              const otherActivity = formatEducatorActivity(other.lastActiveAt)
-
-              return (
-                <button
-                  type="button"
-                  key={conversation.id}
-                  onClick={() => setActivePeer(other.id)}
-                  className={`group relative flex w-full items-center gap-3 px-4 py-3.5 text-left transition-all ${
-                    isSelected
-                      ? "bg-navy/5 border-l-4 border-navy"
-                      : "hover:bg-canvas/80"
-                  }`}
-                >
-                  <div className="relative shrink-0">
-                    <Avatar educator={other} size={42} rounded="rounded-xl" />
-                    <span
-                      className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-surface transition-colors ${
-                        otherOnline
-                          ? "bg-emerald-500 shadow-[0_0_0_2px_rgba(16,185,129,0.25)]"
-                          : "bg-slate-300"
-                      }`}
-                      title={otherActivity.label}
-                    />
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-1.5">
-                      <span className="flex items-center gap-1.5 truncate text-[13px] font-bold text-ink">
-                        <span className="truncate">{other.name}</span>
-                        {isOtherCreator ? (
-                          <Icons.VerifiedSeal className="h-3 w-3 shrink-0 text-navy" />
-                        ) : other.verified ? (
-                          <Icons.VerifiedSeal className="h-3 w-3 shrink-0 text-sky-600" />
-                        ) : null}
+          <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+            {composing ? (
+              colleagues.length > 0 ? (
+                colleagues.map((educator) => (
+                  <button
+                    type="button"
+                    key={educator.id}
+                    onClick={() => {
+                      setActivePeer(educator.id)
+                      setComposing(false)
+                      setSearch("")
+                    }}
+                    className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors hover:bg-canvas"
+                  >
+                    <PresenceAvatar educator={educator} size={44} />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5 truncate text-[14px] font-semibold text-ink">
+                        <span className="truncate">{educator.name}</span>
+                        {educator.verified ? <Icons.VerifiedSeal className="h-3.5 w-3.5 shrink-0" /> : null}
                       </span>
-
-                      {last ? (
-                        <span className="shrink-0 font-mono text-[10px] text-muted">
-                          {formatChatSidebarTime(last.createdAt)}
-                        </span>
-                      ) : null}
-                    </div>
-
-                    <div className="mt-1 flex items-center justify-between gap-2">
-                      <p className={`truncate text-xs ${unread > 0 ? "font-semibold text-ink" : "text-muted"}`}>
-                        {last ? (
-                          <>
-                            {lastIsMine ? <span className="font-mono text-muted/80">You: </span> : null}
-                            <span>{last.body}</span>
-                          </>
-                        ) : (
-                          <span className="italic text-muted/70">No messages yet</span>
-                        )}
-                      </p>
-
-                      {unread > 0 ? (
-                        <span className="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-navy px-1 font-mono text-[10px] font-bold text-white shadow-2xs">
-                          {unread}
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                </button>
+                      <span className="block truncate text-[12.5px] text-muted">
+                        {[educator.subject, educator.school].filter(Boolean).join(" · ")}
+                      </span>
+                    </span>
+                  </button>
+                ))
+              ) : (
+                <EmptyList title="No colleagues found" body="Try a different name, school or subject." />
               )
-            })}
-
-            {orderedConversations.length === 0 ? (
-              <div className="p-6 text-center">
-                <Icons.Message className="mx-auto h-7 w-7 text-muted/60" />
-                <p className="mt-2 text-xs font-semibold text-ink">No conversations found</p>
-                <p className="mt-1 text-[11px] text-muted">
-                  Choose a colleague below or connect with peers in Discover.
-                </p>
-              </div>
-            ) : null}
-          </div>
-
-          {/* Quick Start / Colleague Selector */}
-          {otherEducators.length > 0 ? (
-            <div className="border-t border-line bg-canvas/50 p-3.5">
-              <label className="mb-1.5 flex items-center justify-between font-mono text-[10px] font-bold uppercase tracking-wider text-muted">
-                <span>Start New Thread</span>
-                <span className="text-muted/60">{otherEducators.length} available</span>
-              </label>
-              <select
-                value={activePeer ?? ""}
-                onChange={(event) => setActivePeer(event.target.value || null)}
-                aria-label="Start conversation with a colleague"
-                className="h-9 w-full rounded-xl border border-line bg-surface px-3 text-xs font-medium text-ink outline-none transition focus:border-navy"
-              >
-                <option value="">Select a faculty colleague…</option>
-                {otherEducators.map((educator) => (
-                  <option key={educator.id} value={educator.id}>
-                    {educator.name} · {educator.school || educator.subject}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : null}
-        </aside>
-
-        {/* Chat Window (Active Conversation) */}
-        <section className={`min-h-[420px] flex-col bg-[#f8f9fb] ${peer ? "flex" : "hidden lg:flex"}`}>
-          {peer ? (
-            <>
-              {/* Chat Header */}
-              <header className="flex items-center justify-between gap-3 border-b border-line bg-surface px-4 py-3 sm:px-6 shadow-2xs">
-                <div className="flex min-w-0 items-center gap-3">
+            ) : rows.length > 0 ? (
+              rows.map(({ conversation, other, last }) => {
+                const unread = unreadIn(conversation.id)
+                const selected = activePeer === other.id
+                const lastMine = last?.senderId === me
+                const peerTyping = isTyping(conversation.typingAt[other.id], last)
+                return (
                   <button
                     type="button"
-                    className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-ink hover:bg-canvas lg:hidden"
-                    aria-label="Back to conversations list"
-                    onClick={() => setActivePeer(null)}
+                    key={conversation.id}
+                    onClick={() => setActivePeer(other.id)}
+                    className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors ${
+                      selected ? "bg-navy-soft" : "hover:bg-canvas"
+                    }`}
                   >
-                    <Icons.ChevronLeft className="h-4 w-4" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => onAuthor(peer.id)}
-                    className="group flex min-w-0 items-center gap-3 text-left"
-                    title="View faculty profile"
-                  >
-                    <div className="relative shrink-0">
-                      <Avatar educator={peer} size={40} rounded="rounded-xl" />
-                      <span
-                        className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-surface transition-colors ${
-                          peerOnline
-                            ? "bg-emerald-500 shadow-[0_0_0_2px_rgba(16,185,129,0.25)]"
-                            : "bg-slate-300"
-                        }`}
-                        title={peerActivity.label}
-                      />
-                    </div>
-
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="truncate text-sm font-bold text-ink group-hover:text-navy transition-colors">
-                          {peer.name}
-                        </span>
-                        {isPeerCreator ? (
-                          <span className="inline-flex items-center gap-1 rounded bg-navy/10 px-1.5 py-0.2 font-mono text-[9px] font-bold text-navy">
-                            <Icons.VerifiedSeal className="h-2.5 w-2.5" />
-                            Founder
+                    <PresenceAvatar educator={other} size={48} />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-baseline justify-between gap-2">
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className={`truncate text-[14.5px] text-ink ${unread ? "font-bold" : "font-semibold"}`}>
+                            {other.name}
                           </span>
-                        ) : peer.verified ? (
-                          <span className="inline-flex items-center gap-0.5 rounded bg-sky-50 px-1.5 py-0.2 font-mono text-[9px] font-semibold text-sky-700">
-                            <Icons.VerifiedSeal className="h-2.5 w-2.5" />
-                            Verified
-                          </span>
-                        ) : null}
-                      </div>
-                      <p className="truncate font-mono text-[11px] text-muted flex items-center gap-1.5">
-                        <span className="truncate">{peer.school ? `${peer.school} · ` : ""}{peer.subject}</span>
-                        <span className="text-muted/60">•</span>
-                        <span className={`inline-flex items-center gap-1 ${peerOnline ? "font-semibold text-emerald-600" : "text-muted"}`}>
-                          <span className={`h-1.5 w-1.5 rounded-full ${peerOnline ? "bg-emerald-500" : "bg-slate-400"}`} />
-                          {peerActivity.label}
+                          {other.verified ? <Icons.VerifiedSeal className="h-3.5 w-3.5 shrink-0" /> : null}
                         </span>
-                      </p>
-                    </div>
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onAuthor(peer.id)}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-canvas px-3 py-1.5 text-xs font-semibold text-ink shadow-2xs hover:border-navy hover:text-navy transition"
-                  >
-                    <Icons.Eye className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">View Profile</span>
-                  </button>
-                </div>
-              </header>
-
-              {/* Messages Feed */}
-              <div className="flex-1 space-y-3.5 overflow-y-auto p-4 sm:p-6">
-                <div className="mx-auto my-2 w-max rounded-full border border-line bg-surface/80 px-3 py-1 font-mono text-[10px] uppercase tracking-wider text-muted shadow-2xs backdrop-blur-xs">
-                  Encrypted Academic Channel
-                </div>
-
-                {thread.map((message) => {
-                  const mine = message.senderId === currentUser?.id
-                  return (
-                    <div
-                      key={message.id}
-                      className={`flex ${mine ? "justify-end" : "justify-start"} animate-in fade-in duration-200`}
-                    >
-                      <div
-                        className={`group relative max-w-[88%] sm:max-w-[75%] rounded-2xl p-3.5 shadow-sm transition-shadow ${
-                          mine
-                            ? "bg-navy text-white rounded-br-xs"
-                            : "bg-surface text-ink border border-line/80 rounded-bl-xs"
-                        }`}
-                      >
-                        {/* Message text */}
-                        <p className="text-[13.5px] leading-relaxed whitespace-pre-wrap break-words">
-                          {message.body}
-                        </p>
-
-                        {/* Attachment Preview Card if present */}
-                        {message.attachmentUrl ? (
-                          <div className="mt-2.5">
-                            {message.attachmentType?.startsWith("audio/") ||
-                            message.attachmentName?.toLowerCase().includes("voice note") ||
-                            message.attachmentUrl.startsWith("data:audio/") ? (
-                              <AudioMessageBubble
-                                url={message.attachmentUrl}
-                                name={message.attachmentName}
-                                durationText={message.attachmentSize}
-                                mine={mine}
-                              />
-                            ) : message.attachmentType?.startsWith("image/") ? (
-                              <a
-                                href={message.attachmentUrl}
-                                download={message.attachmentName ?? "image"}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="block overflow-hidden rounded-xl border border-white/20"
-                              >
-                                <img
-                                  src={message.attachmentUrl}
-                                  alt={message.attachmentName ?? "Chat attachment"}
-                                  className="max-h-60 w-full object-cover transition hover:scale-102"
-                                />
-                              </a>
-                            ) : (
-                              <a
-                                href={message.attachmentUrl}
-                                download={message.attachmentName ?? "attachment"}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className={`flex items-center gap-3 rounded-xl p-2.5 text-xs font-semibold transition ${
-                                  mine
-                                    ? "bg-white/10 text-white hover:bg-white/20 border border-white/10"
-                                    : "bg-canvas text-ink hover:bg-line/40 border border-line"
-                                }`}
-                              >
-                                <Icons.Paperclip className="h-4 w-4 shrink-0 opacity-80" />
-                                <div className="min-w-0 flex-1 truncate">
-                                  <p className="truncate">{message.attachmentName || "Attachment File"}</p>
-                                  {message.attachmentSize ? (
-                                    <p className="font-mono text-[10px] opacity-70">{message.attachmentSize}</p>
-                                  ) : null}
-                                </div>
-                                <Icons.Download className="h-4 w-4 shrink-0 opacity-80" />
-                              </a>
-                            )}
-                          </div>
-                        ) : null}
-
-                        {/* Timestamp & Status Receipts */}
-                        <div
-                          className={`mt-1.5 flex items-center justify-end gap-1.5 font-mono text-[10px] ${
-                            mine ? "text-white/70" : "text-muted"
+                        <span className={`shrink-0 text-[11.5px] ${unread ? "font-semibold text-navy" : "text-muted"}`}>
+                          {formatListTime(last?.createdAt ?? conversation.updatedAt)}
+                        </span>
+                      </span>
+                      <span className="mt-0.5 flex items-center justify-between gap-2">
+                        <span
+                          className={`flex min-w-0 items-center gap-1 text-[13px] ${
+                            unread ? "font-medium text-ink" : "text-muted"
                           }`}
                         >
-                          <span>{formatBubbleTime(message.createdAt)}</span>
-                          {mine ? (
-                            <span title="Delivered & Synced" className="inline-flex items-center">
-                              <Icons.DoubleCheck className="h-3.5 w-3.5 text-sky-300" />
-                            </span>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-
-                {thread.length === 0 ? (
-                  <div className="pt-12 text-center">
-                    <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-surface border border-line text-navy shadow-xs">
-                      <Icons.Message className="h-6 w-6" />
-                    </div>
-                    <p className="mt-3 font-display text-sm font-bold text-ink">
-                      No messages yet with {peer.name}
-                    </p>
-                    <p className="mt-1 text-xs text-muted max-w-sm mx-auto">
-                      Say hello, share curriculum insights, or plan a joint teaching workshop.
-                    </p>
-                  </div>
-                ) : null}
-
-                <div ref={bottomRef} />
-              </div>
-
-              {/* Pending Attachment Notification Card */}
-              {attachment ? (
-                <div className="mx-4 mb-2 flex items-center justify-between rounded-xl border border-line bg-surface p-2.5 shadow-xs">
-                  <div className="flex items-center gap-2.5 truncate">
-                    <Icons.Paperclip className="h-4 w-4 text-navy shrink-0" />
-                    <span className="truncate text-xs font-semibold text-ink">{attachment.name}</span>
-                    <span className="font-mono text-[10px] text-muted shrink-0">({attachment.size})</span>
-                  </div>
+                          {peerTyping ? (
+                            <span className="font-medium text-online">typing…</span>
+                          ) : (
+                            <>
+                              {lastMine && last ? (
+                                <StatusTicks
+                                  status={messageStatus(last, other.id, conversation, other.lastActiveAt)}
+                                />
+                              ) : null}
+                              {last && isVoiceNote(last) ? <Icons.Mic className="h-3.5 w-3.5 shrink-0" /> : null}
+                              {last && isImageAttachment(last) ? <Icons.Photo className="h-3.5 w-3.5 shrink-0" /> : null}
+                              <span className="truncate">
+                                {last ? previewText(last) : (conversation.lastMessage ?? "Say hello")}
+                              </span>
+                            </>
+                          )}
+                        </span>
+                        {unread > 0 ? (
+                          <span className="animate-pop-in grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-navy px-1.5 text-[11px] font-bold text-white">
+                            {unread > 99 ? "99+" : unread}
+                          </span>
+                        ) : null}
+                      </span>
+                    </span>
+                  </button>
+                )
+              })
+            ) : needle ? (
+              <EmptyList title="No matches" body={`Nothing in your messages matches “${search || query}”.`} />
+            ) : (
+              <EmptyList
+                title="No conversations yet"
+                body="Start one with a colleague. Plan a lesson together, swap a worksheet or just say hello."
+                action={
                   <button
                     type="button"
-                    onClick={() => setAttachment(null)}
-                    className="grid h-6 w-6 place-items-center rounded-full text-muted hover:bg-black/5 hover:text-ink"
-                    title="Remove attachment"
+                    onClick={() => setComposing(true)}
+                    className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl bg-navy px-4 text-[13px] font-semibold text-white hover:bg-navy-hover"
                   >
-                    <Icons.Close className="h-3.5 w-3.5" />
+                    <Icons.Pencil className="h-4 w-4" />
+                    New message
                   </button>
-                </div>
-              ) : null}
+                }
+              />
+            )}
+          </div>
+        </aside>
 
-              {/* Chat Input Bar */}
-              <div className="relative border-t border-line bg-surface p-3 sm:p-4">
-                {/* Complete Emoji Suite Drawer Popover */}
-                {emojiOpen ? (
-                  <div
-                    ref={emojiPopoverRef}
-                    className="absolute bottom-full left-2 sm:left-4 mb-2 w-[calc(100vw-2rem)] sm:w-96 max-w-sm rounded-2xl border border-line bg-surface/98 p-3 shadow-2xl backdrop-blur-md z-30 animate-in fade-in slide-in-from-bottom-2 duration-150"
-                  >
-                    {/* Header with Search & Close */}
-                    <div className="flex items-center gap-2 border-b border-line pb-2.5 mb-2">
-                      <div className="relative flex-1">
-                        <Icons.Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted" />
-                        <input
-                          type="text"
-                          value={emojiSearch}
-                          onChange={(e) => setEmojiSearch(e.target.value)}
-                          placeholder="Search all emojis, flags & smileys…"
-                          className="h-8 w-full rounded-xl border border-line bg-canvas/60 pl-8 pr-2 text-xs text-ink outline-none focus:border-navy"
-                        />
-                        {emojiSearch ? (
-                          <button
-                            type="button"
-                            onClick={() => setEmojiSearch("")}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-ink"
-                          >
-                            <Icons.Close className="h-3 w-3" />
-                          </button>
-                        ) : null}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setEmojiOpen(false)}
-                        className="grid h-7 w-7 place-items-center rounded-lg text-muted hover:bg-black/5 hover:text-ink transition"
-                        aria-label="Close emoji picker"
-                      >
-                        <Icons.Close className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-
-                    {/* Category Selector Tabs */}
-                    {!emojiSearch.trim() ? (
-                      <div className="flex items-center gap-1 border-b border-line/60 pb-2 mb-2 overflow-x-auto">
-                        {EMOJI_CATALOG.map((cat) => (
-                          <button
-                            type="button"
-                            key={cat.id}
-                            onClick={() => setEmojiCategory(cat.id)}
-                            className={`flex items-center gap-1 shrink-0 rounded-lg px-2 py-1 text-[11px] font-medium transition ${
-                              emojiCategory === cat.id
-                                ? "bg-navy text-white shadow-2xs"
-                                : "text-muted hover:bg-canvas hover:text-ink"
-                            }`}
-                          >
-                            <span>{cat.icon}</span>
-                            <span>{cat.name}</span>
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    {/* Emoji Grid */}
-                    <div className="grid grid-cols-8 gap-1 overflow-y-auto max-h-56 p-0.5 text-xl">
-                      {displayedEmojis.map((emoji, index) => (
-                        <button
-                          type="button"
-                          key={`${emoji}-${index}`}
-                          onClick={() => handleInsertEmoji(emoji)}
-                          className="grid h-9 w-9 place-items-center rounded-xl hover:bg-canvas hover:scale-110 active:scale-95 transition-transform"
-                          title={emoji}
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                      {displayedEmojis.length === 0 ? (
-                        <div className="col-span-8 py-6 text-center text-xs text-muted">
-                          No emojis found for "{emojiSearch}"
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
-
-                {/* Hidden File Input */}
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileSelect}
-                  className="hidden"
-                  accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.key,.txt,.zip"
-                />
-
-                {isRecording ? (
-                  /* Sleek Minimalist Floating Audio Recorder Bar */
-                  <div className="flex items-center justify-between gap-2 sm:gap-3 rounded-2xl border border-line bg-surface/95 px-3 sm:px-4 py-2 sm:py-2.5 shadow-sm backdrop-blur-sm animate-in fade-in duration-150">
-                    <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                      {/* Gentle recording pulse */}
-                      <div className="relative flex h-2.5 w-2.5 shrink-0">
-                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-60" />
-                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-rose-500" />
-                      </div>
-
-                      <span className="text-xs font-medium text-ink truncate hidden xs:inline">
-                        Recording voice note
-                      </span>
-
-                      {/* Monospace timer with 3:00 max indication */}
-                      <div className="flex items-baseline gap-1 font-mono text-xs">
-                        <span className="font-semibold text-ink">
-                          {Math.floor(recordingSeconds / 60)}:{(recordingSeconds % 60).toString().padStart(2, "0")}
-                        </span>
-                        <span className="text-[10px] text-muted">/ 3:00</span>
-                      </div>
-
-                      {/* Elegant soundwave animation */}
-                      <div className="hidden sm:flex items-center gap-0.5 h-4 ml-1">
-                        {[35, 75, 100, 50, 90, 40, 85, 60, 30, 70].map((h, i) => (
-                          <span
-                            key={i}
-                            className="w-0.5 rounded-full bg-navy/60 animate-pulse"
-                            style={{
-                              height: `${h}%`,
-                              animationDelay: `${i * 100}ms`,
-                              animationDuration: "800ms",
-                            }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Action buttons */}
-                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={handleCancelRecording}
-                        className="inline-flex items-center gap-1 sm:gap-1.5 rounded-xl border border-line bg-canvas px-2.5 sm:px-3 py-1.5 text-xs font-medium text-muted hover:text-ink hover:bg-black/5 transition active:scale-95"
-                        title="Discard voice recording"
-                      >
-                        <Icons.Trash className="h-3.5 w-3.5" />
-                        <span className="hidden sm:inline">Discard</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        disabled={sending}
-                        onClick={handleSendRecording}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-navy px-3 sm:px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-navy-hover transition active:scale-98 disabled:opacity-50"
-                        title="Send voice note"
-                      >
-                        <Icons.Send className="h-3.5 w-3.5" />
-                        <span>{sending ? "Sending…" : "Send"}</span>
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <form onSubmit={handleSend} className="flex items-end gap-1.5 sm:gap-2">
-                    {/* Emoji Trigger Button */}
-                    <button
-                      type="button"
-                      onClick={() => setEmojiOpen((prev) => !prev)}
-                      className={`grid h-9 w-9 sm:h-10 sm:w-10 shrink-0 place-items-center rounded-xl sm:rounded-2xl transition ${
-                        emojiOpen ? "bg-navy/10 text-navy" : "text-muted hover:bg-canvas hover:text-ink"
-                      }`}
-                      title="Insert emoji"
-                    >
-                      <Icons.Smile className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
-                    </button>
-
-                    {/* Attachment Trigger Button */}
-                    <button
-                      type="button"
-                      disabled={uploading}
-                      onClick={() => fileInputRef.current?.click()}
-                      className="grid h-9 w-9 sm:h-10 sm:w-10 shrink-0 place-items-center rounded-xl sm:rounded-2xl text-muted hover:bg-canvas hover:text-ink transition disabled:opacity-50"
-                      title="Attach document or media"
-                    >
-                      <Icons.Paperclip className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
-                    </button>
-
-                    {/* Voice Note Recording Trigger */}
-                    <button
-                      type="button"
-                      disabled={sending || uploading}
-                      onClick={handleStartRecording}
-                      className="grid h-9 w-9 sm:h-10 sm:w-10 shrink-0 place-items-center rounded-xl sm:rounded-2xl text-muted hover:bg-canvas hover:text-navy transition disabled:opacity-50"
-                      title="Record voice note"
-                    >
-                      <Icons.Mic className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
-                    </button>
-
-                    {/* Message Input with sleek Type a message... placeholder */}
-                    <div className="relative min-w-0 flex-1">
-                      <textarea
-                        ref={textareaRef}
-                        rows={1}
-                        value={draft}
-                        onChange={(event) => {
-                          setDraft(event.target.value)
-                          if (textareaRef.current) {
-                            textareaRef.current.style.height = "auto"
-                            textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`
-                          }
-                        }}
-                        onKeyDown={handleKeyDown}
-                        disabled={sending}
-                        className="min-h-[38px] sm:min-h-[42px] max-h-32 w-full resize-none rounded-xl sm:rounded-2xl border border-line bg-canvas/80 px-3 sm:px-4 py-2 text-xs sm:text-sm text-ink outline-none transition placeholder:text-muted/70 hover:border-line-strong focus:border-navy focus:bg-surface focus:shadow-2xs disabled:opacity-60 leading-relaxed"
-                        placeholder={uploading ? "Uploading attachment…" : "Type a message..."}
-                      />
-                    </div>
-
-                    {/* Send Button */}
-                    <button
-                      type="submit"
-                      disabled={sending || uploading || (!draft.trim() && !attachment)}
-                      className="inline-flex h-9 sm:h-10 shrink-0 items-center justify-center gap-1 sm:gap-1.5 rounded-xl sm:rounded-2xl bg-navy px-3 sm:px-4 text-xs sm:text-sm font-semibold text-white shadow-sm transition hover:bg-navy-hover active:scale-98 disabled:opacity-40"
-                      title="Send message"
-                    >
-                      <Icons.Send className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                      <span className="hidden sm:inline">{sending ? "Sending…" : "Send"}</span>
-                    </button>
-                  </form>
-                )}
-
-                {error ? (
-                  <p className="mt-2 text-xs font-medium text-rose-600 animate-in fade-in">
-                    {error}
-                  </p>
-                ) : null}
-              </div>
-            </>
+        {/* ── Thread ── */}
+        <section className={`min-h-0 min-w-0 flex-1 flex-col ${peer ? "flex" : "hidden lg:flex"}`}>
+          {peer && currentUser ? (
+            <Thread
+              key={peer.id}
+              me={currentUser.id}
+              peer={peer}
+              conversation={conversationWith(peer.id)}
+              messages={(() => {
+                const conversation = conversationWith(peer.id)
+                return conversation ? messagesFor(conversation.id) : []
+              })()}
+              onBack={() => setActivePeer(null)}
+              onAuthor={onAuthor}
+              sendMessage={sendMessage}
+              uploadChatAttachment={uploadChatAttachment}
+              markConversationRead={markConversationRead}
+              signalTyping={signalTyping}
+              notify={notify}
+            />
           ) : (
-            /* Empty State: No Colleague Selected */
-            <div className="grid flex-1 place-items-center p-8 text-center bg-[#f8f9fb]">
-              <div className="max-w-md">
-                <div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl bg-surface border border-line text-navy shadow-sm">
-                  <Icons.Message className="h-8 w-8" />
-                </div>
-                <h3 className="mt-4 font-display text-lg font-bold text-ink">
-                  Select a faculty colleague
-                </h3>
-                <p className="mt-1.5 text-xs leading-relaxed text-muted">
-                  Open an existing thread from the left or select a colleague from the dropdown to start collaborating.
+            <div className="grid flex-1 place-items-center bg-canvas/60 p-8 text-center">
+              <div className="max-w-xs">
+                <span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-surface text-navy shadow-[0_1px_2px_rgba(18,20,28,0.06)]">
+                  <Icons.Message className="h-7 w-7" />
+                </span>
+                <h2 className="mt-4 font-display text-lg font-bold text-ink">Your messages</h2>
+                <p className="mt-1.5 text-[14px] leading-relaxed text-muted">
+                  Pick a conversation, or start a new one with a colleague.
                 </p>
+                <button
+                  type="button"
+                  onClick={() => setComposing(true)}
+                  className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl bg-navy px-4 text-[13px] font-semibold text-white hover:bg-navy-hover"
+                >
+                  <Icons.Pencil className="h-4 w-4" />
+                  New message
+                </button>
               </div>
             </div>
           )}
         </section>
       </div>
     </main>
+  )
+}
+
+/**
+ * Sizes the chat to exactly fill the viewport below whatever sits above it (header, mobile
+ * search row, banners), so the composer is always on screen without scrolling the page.
+ */
+function useViewportFill<T extends HTMLElement>() {
+  const ref = useRef<T>(null)
+  const [top, setTop] = useState(64)
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = ref.current
+      if (!el) return
+      const scrolled = document.body.scrollTop + document.documentElement.scrollTop
+      setTop(Math.max(0, Math.round(el.getBoundingClientRect().top + scrolled)))
+    }
+    measure()
+    window.addEventListener("resize", measure)
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure)
+    const parent = ref.current?.parentElement
+    if (observer) {
+      observer.observe(document.body)
+      if (parent?.previousElementSibling) observer.observe(parent.previousElementSibling)
+    }
+    return () => {
+      window.removeEventListener("resize", measure)
+      observer?.disconnect()
+    }
+  }, [])
+  return { ref, height: `calc(100dvh - ${top}px)` }
+}
+
+function previewText(message: ChatMessage) {
+  if (isVoiceNote(message)) return "Voice note"
+  if (isImageAttachment(message) && message.body.startsWith("Shared ")) return "Photo"
+  return message.body
+}
+
+function isTyping(typingAt: string | undefined, last: ChatMessage | undefined) {
+  if (!typingAt) return false
+  if (Date.now() - new Date(typingAt).getTime() > TYPING_FRESH_MS) return false
+  return !last || typingAt > last.createdAt
+}
+
+function PresenceAvatar({ educator, size }: { educator: Educator; size: number }) {
+  const online = isEducatorOnline(educator.lastActiveAt)
+  return (
+    <span className="relative shrink-0">
+      <Avatar educator={educator} size={size} rounded="rounded-full" />
+      {online ? (
+        <span
+          className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-[2.5px] border-surface bg-online"
+          title="Active now"
+        />
+      ) : null}
+    </span>
+  )
+}
+
+function EmptyList({ title, body, action }: { title: string; body: string; action?: React.ReactNode }) {
+  return (
+    <div className="px-6 py-12 text-center">
+      <p className="text-[14px] font-semibold text-ink">{title}</p>
+      <p className="mx-auto mt-1 max-w-[16rem] text-[13px] leading-relaxed text-muted">{body}</p>
+      {action}
+    </div>
+  )
+}
+
+/* ──────────────────────────────────────────────────────────────────────────────────── */
+
+type ThreadProps = {
+  me: string
+  peer: Educator
+  conversation: ReturnType<ReturnType<typeof useApp>["conversationWith"]>
+  messages: ChatMessage[]
+  onBack: () => void
+  onAuthor: (id: string) => void
+  sendMessage: ReturnType<typeof useApp>["sendMessage"]
+  uploadChatAttachment: ReturnType<typeof useApp>["uploadChatAttachment"]
+  markConversationRead: ReturnType<typeof useApp>["markConversationRead"]
+  signalTyping: ReturnType<typeof useApp>["signalTyping"]
+  notify: (message: string) => void
+}
+
+function Thread({
+  me,
+  peer,
+  conversation,
+  messages,
+  onBack,
+  onAuthor,
+  sendMessage,
+  uploadChatAttachment,
+  markConversationRead,
+  signalTyping,
+  notify,
+}: ThreadProps) {
+  const [draft, setDraft] = useState("")
+  const [staged, setStaged] = useState<StagedAttachment | null>(null)
+  const [emojiOpen, setEmojiOpen] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [lightbox, setLightbox] = useState<{ url: string; name: string } | null>(null)
+  const [newBelow, setNewBelow] = useState(0)
+  const [, forceTick] = useState(0)
+
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  // Messages present when the thread opened render without an entrance animation.
+  const initialIds = useRef<Set<string>>(new Set(messages.map((message) => message.id)))
+  const lastCountRef = useRef(messages.length)
+
+  const activity = formatEducatorActivity(peer.lastActiveAt)
+  const peerTyping = conversation ? isTyping(conversation.typingAt[peer.id], messages.at(-1)) : false
+  const founder = isFounderEmail(peer.email)
+
+  // Re-render every few seconds so "typing…" and presence labels expire on their own.
+  useEffect(() => {
+    const timer = window.setInterval(() => forceTick((value) => value + 1), 3_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
+    if (conversation) markConversationRead(conversation.id)
+  }, [conversation, markConversationRead, messages.length])
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const added = messages.length - lastCountRef.current
+    lastCountRef.current = messages.length
+    if (added <= 0) return
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 160
+    const mineLast = messages.at(-1)?.senderId === me
+    if (nearBottom || mineLast) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
+      setNewBelow(0)
+    } else {
+      setNewBelow((value) => value + added)
+    }
+  }, [me, messages])
+
+  useEffect(() => {
+    if (!peerTyping) return
+    const el = scrollRef.current
+    if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 160) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
+    }
+  }, [peerTyping])
+
+  useEffect(() => {
+    return () => {
+      if (staged?.previewUrl) URL.revokeObjectURL(staged.previewUrl)
+    }
+  }, [staged?.previewUrl])
+
+  const resizeComposer = useCallback(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = "auto"
+    el.style.height = `${Math.min(el.scrollHeight, 140)}px`
+  }, [])
+
+  async function handleSend(event?: FormEvent) {
+    event?.preventDefault()
+    const attachment = staged?.ready
+    if (staged && !attachment) return
+    if (!draft.trim() && !attachment) return
+    const body = draft
+    setDraft("")
+    setStaged(null)
+    setEmojiOpen(false)
+    setError(null)
+    requestAnimationFrame(resizeComposer)
+    const result = await sendMessage(peer.id, body, attachment)
+    if (result) {
+      setError(result)
+      setDraft(body)
+    }
+    textareaRef.current?.focus()
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+      event.preventDefault()
+      void handleSend()
+    }
+  }
+
+  async function stageFile(file: File) {
+    if (file.size > MAX_FILE_BYTES) {
+      setError(`Attachments must be ${Math.round(MAX_FILE_BYTES / 1_048_576)} MB or smaller.`)
+      return
+    }
+    const controller = new AbortController()
+    const previewUrl = file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined
+    setError(null)
+    setStaged({ file, previewUrl, progress: 0, controller })
+    try {
+      const ready = await uploadChatAttachment(file, {
+        signal: controller.signal,
+        onProgress: (progress) =>
+          setStaged((current) => (current?.controller === controller ? { ...current, progress } : current)),
+      })
+      setStaged((current) => (current?.controller === controller ? { ...current, progress: 100, ready } : current))
+      textareaRef.current?.focus()
+    } catch (err) {
+      setStaged((current) => (current?.controller === controller ? null : current))
+      if (controller.signal.aborted) return
+      setError(err instanceof Error ? err.message : "Could not attach that file.")
+    }
+  }
+
+  function handleFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ""
+    if (file) void stageFile(file)
+  }
+
+  const groups = useMemo(() => groupMessages(messages), [messages])
+  const lastMine = [...messages].reverse().find((message) => message.senderId === me)
+
+  return (
+    <>
+      <header className="flex h-16 shrink-0 items-center gap-2 border-b border-line bg-surface/95 px-2 backdrop-blur sm:px-4">
+        <button
+          type="button"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink hover:bg-canvas lg:hidden"
+          aria-label="Back to conversations"
+          onClick={onBack}
+        >
+          <Icons.ChevronLeft className="h-5 w-5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onAuthor(peer.id)}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-xl px-1 py-1 text-left"
+          title="View profile"
+        >
+          <PresenceAvatar educator={peer} size={40} />
+          <span className="min-w-0">
+            <span className="flex items-center gap-1.5">
+              <span className="truncate text-[15px] font-semibold text-ink">{peer.name}</span>
+              {peer.verified || founder ? <Icons.VerifiedSeal className="h-3.5 w-3.5 shrink-0" /> : null}
+              {founder ? (
+                <span className="rounded-full bg-navy-soft px-1.5 text-[10px] font-semibold text-navy">Founder</span>
+              ) : null}
+            </span>
+            <span
+              key={peerTyping ? "typing" : activity.label}
+              className={`animate-fade-in block truncate text-[12.5px] ${
+                peerTyping || activity.isOnline ? "text-online" : "text-muted"
+              }`}
+            >
+              {peerTyping ? "typing…" : activity.isOnline ? "Online" : activity.label}
+              {!peerTyping && peer.school ? <span className="text-muted"> · {peer.school}</span> : null}
+            </span>
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onAuthor(peer.id)}
+          className="hidden h-9 items-center gap-1.5 rounded-full border border-line px-3.5 text-[13px] font-medium text-ink transition-colors hover:border-line-strong sm:inline-flex"
+        >
+          View profile
+        </button>
+      </header>
+
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={scrollRef}
+          onScroll={(event) => {
+            const el = event.currentTarget
+            if (newBelow && el.scrollHeight - el.scrollTop - el.clientHeight < 80) setNewBelow(0)
+          }}
+          className="h-full overflow-y-auto overscroll-contain bg-canvas/70 px-3 py-4 sm:px-6"
+        >
+          {messages.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center pb-10 text-center">
+              <Avatar educator={peer} size={72} rounded="rounded-full" />
+              <p className="mt-3 font-display text-lg font-bold text-ink">{peer.name}</p>
+              <p className="mt-0.5 text-[13px] text-muted">
+                {[peer.subject, peer.school].filter(Boolean).join(" · ")}
+              </p>
+              <p className="mt-4 max-w-xs text-[13px] leading-relaxed text-muted">
+                Say hello. Share a worksheet or plan next term's assessments together.
+              </p>
+            </div>
+          ) : (
+            <div className="mx-auto flex max-w-3xl flex-col">
+              {groups.map((group, groupIndex) => {
+                const mine = group.senderId === me
+                const showDay = groupIndex === 0 || !sameDay(groups[groupIndex - 1].messages[0].createdAt, group.messages[0].createdAt)
+                return (
+                  <div key={group.messages[0].id}>
+                    {showDay ? (
+                      <div className="sticky top-0 z-10 flex justify-center py-2">
+                        <span className="rounded-full bg-surface/90 px-3 py-1 text-[11.5px] font-medium text-muted shadow-[0_1px_2px_rgba(18,20,28,0.08)] backdrop-blur">
+                          {formatDayDivider(group.messages[0].createdAt)}
+                        </span>
+                      </div>
+                    ) : null}
+                    <div className={`mt-2 flex flex-col gap-[3px] ${mine ? "items-end" : "items-start"}`}>
+                      {group.messages.map((message, index) => {
+                        const last = index === group.messages.length - 1
+                        const status = mine ? messageStatus(message, peer.id, conversation, peer.lastActiveAt) : null
+                        return (
+                          <Bubble
+                            key={message.id}
+                            message={message}
+                            mine={mine}
+                            first={index === 0}
+                            animate={!initialIds.current.has(message.id)}
+                            status={status}
+                            showMeta={last || status === "sending"}
+                            showReceiptLabel={mine && message.id === lastMine?.id}
+                            onImage={(url, name) => setLightbox({ url, name })}
+                          />
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+              {peerTyping ? <TypingBubble /> : null}
+            </div>
+          )}
+        </div>
+
+        {newBelow > 0 ? (
+          <button
+            type="button"
+            onClick={() => {
+              scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" })
+              setNewBelow(0)
+            }}
+            className="animate-pop-in absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-navy px-3.5 py-2 text-[12.5px] font-semibold text-white shadow-[0_8px_24px_rgba(18,20,28,0.2)]"
+          >
+            <Icons.Chevron className="h-4 w-4" />
+            {newBelow} new {newBelow === 1 ? "message" : "messages"}
+          </button>
+        ) : null}
+      </div>
+
+      <div className="relative shrink-0 border-t border-line bg-surface px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 sm:px-4 sm:pb-3 sm:pt-3">
+        {emojiOpen ? (
+          <EmojiPicker
+            onClose={() => setEmojiOpen(false)}
+            onPick={(emoji) => {
+              const el = textareaRef.current
+              const start = el?.selectionStart ?? draft.length
+              const end = el?.selectionEnd ?? draft.length
+              setDraft((value) => value.slice(0, start) + emoji + value.slice(end))
+              requestAnimationFrame(() => {
+                el?.focus()
+                el?.setSelectionRange(start + emoji.length, start + emoji.length)
+              })
+            }}
+          />
+        ) : null}
+
+        {staged ? (
+          <StagedCard
+            staged={staged}
+            onRemove={() => {
+              staged.controller.abort()
+              setStaged(null)
+            }}
+          />
+        ) : null}
+
+        {error ? (
+          <p role="alert" className="animate-fade-in mb-2 flex items-start gap-2 rounded-xl bg-[#fbeeec] px-3 py-2 text-[12.5px] text-[#8a3b32]">
+            <Icons.Alert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span className="flex-1">{error}</span>
+            <button type="button" onClick={() => setError(null)} aria-label="Dismiss" className="shrink-0">
+              <Icons.Close className="h-3.5 w-3.5" />
+            </button>
+          </p>
+        ) : null}
+
+        <input ref={fileInputRef} type="file" className="hidden" onChange={handleFile} />
+
+        <Composer
+          draft={draft}
+          canSend={Boolean(draft.trim() || staged?.ready)}
+          busy={Boolean(staged && !staged.ready)}
+          emojiOpen={emojiOpen}
+          textareaRef={textareaRef}
+          onDraft={(value) => {
+            setDraft(value)
+            resizeComposer()
+            if (value.trim()) signalTyping(peer.id)
+          }}
+          onKeyDown={handleKeyDown}
+          onEmoji={() => setEmojiOpen((value) => !value)}
+          onAttach={() => fileInputRef.current?.click()}
+          onSend={() => void handleSend()}
+          onVoiceNote={async (file) => {
+            try {
+              const attachment = await uploadChatAttachment(file)
+              const result = await sendMessage(peer.id, "", attachment)
+              if (result) setError(result)
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Could not send the voice note.")
+            }
+          }}
+          notify={notify}
+        />
+      </div>
+
+      {lightbox ? <ImageLightbox url={lightbox.url} name={lightbox.name} onClose={() => setLightbox(null)} /> : null}
+    </>
+  )
+}
+
+function groupMessages(messages: ChatMessage[]) {
+  const groups: { senderId: string; messages: ChatMessage[] }[] = []
+  for (const message of messages) {
+    const current = groups.at(-1)
+    const previous = current?.messages.at(-1)
+    if (
+      current &&
+      previous &&
+      current.senderId === message.senderId &&
+      sameDay(previous.createdAt, message.createdAt) &&
+      new Date(message.createdAt).getTime() - new Date(previous.createdAt).getTime() < GROUP_WINDOW_MS
+    ) {
+      current.messages.push(message)
+    } else {
+      groups.push({ senderId: message.senderId, messages: [message] })
+    }
+  }
+  return groups
+}
+
+function Bubble({
+  message,
+  mine,
+  first,
+  animate,
+  status,
+  showMeta,
+  showReceiptLabel,
+  onImage,
+}: {
+  message: ChatMessage
+  mine: boolean
+  first: boolean
+  animate: boolean
+  status: ReturnType<typeof messageStatus> | null
+  showMeta: boolean
+  showReceiptLabel: boolean
+  onImage: (url: string, name: string) => void
+}) {
+  const voice = message.attachmentUrl && isVoiceNote(message)
+  const image = message.attachmentUrl && !voice && isImageAttachment(message)
+  const file = message.attachmentUrl && !voice && !image
+  // Attachment-only messages carry an auto-generated "Shared <name>" body; don't repeat it.
+  const autoBody = Boolean(message.attachmentUrl && message.body === `Shared ${message.attachmentName}`)
+  const text = autoBody ? "" : message.body
+  const mediaOnly = Boolean(image && !text)
+
+  // Grouped bubbles tuck their inner corners together; only the first keeps a full top corner.
+  const radius = mine
+    ? `rounded-[20px] rounded-br-[6px] ${first ? "" : "rounded-tr-[6px]"}`
+    : `rounded-[20px] rounded-bl-[6px] ${first ? "" : "rounded-tl-[6px]"}`
+
+  const meta = (
+    <span
+      className={`inline-flex items-center gap-1 whitespace-nowrap text-[10.5px] tabular-nums ${
+        mediaOnly ? "rounded-full bg-black/45 px-1.5 py-0.5 text-white" : mine ? "text-white/65" : "text-muted"
+      }`}
+    >
+      {formatClock(message.createdAt)}
+      {status ? <StatusTicks status={status} onDark={mine || mediaOnly} /> : null}
+    </span>
+  )
+
+  return (
+    <div
+      className={`group flex max-w-[82%] flex-col sm:max-w-[68%] ${mine ? "items-end" : "items-start"} ${
+        animate ? `animate-message-in ${mine ? "origin-bottom-right" : "origin-bottom-left"}` : ""
+      } ${message.pending ? "opacity-80" : ""} transition-opacity duration-300`}
+      title={new Date(message.createdAt).toLocaleString("en-ZA")}
+    >
+      <div
+        className={`relative ${radius} ${mediaOnly ? "p-1" : voice || file ? "p-1.5" : "px-3.5 py-2"} ${
+          mine ? "bg-navy text-white" : "bg-surface text-ink shadow-[0_1px_1px_rgba(18,20,28,0.06)]"
+        }`}
+      >
+        {voice ? (
+          <div className="px-1 pt-0.5">
+            <VoiceNote url={message.attachmentUrl!} name={message.attachmentName} seed={message.id} mine={mine} />
+          </div>
+        ) : null}
+        {image ? (
+          <div className="relative">
+            <ImageAttachment
+              url={message.attachmentUrl!}
+              name={message.attachmentName ?? "Photo"}
+              onOpen={() => onImage(message.attachmentUrl!, message.attachmentName ?? "Photo")}
+            />
+            {mediaOnly && showMeta ? <span className="absolute bottom-1.5 right-1.5">{meta}</span> : null}
+          </div>
+        ) : null}
+        {file ? (
+          <FileAttachment
+            url={message.attachmentUrl!}
+            name={message.attachmentName ?? "Attachment"}
+            size={message.attachmentSize}
+            mine={mine}
+          />
+        ) : null}
+        {text ? (
+          <p
+            className={`whitespace-pre-wrap break-words text-[14.5px] leading-[1.45] ${
+              image || file || voice ? "px-2 pb-0.5 pt-1.5" : ""
+            }`}
+          >
+            {text}
+            {/* Invisible spacer keeps the last line clear of the floating timestamp. */}
+            {showMeta ? <span className="inline-block w-[4.2rem]" aria-hidden="true" /> : null}
+          </p>
+        ) : null}
+        {showMeta && !mediaOnly ? (
+          <span className={`${text ? "absolute bottom-1.5 right-3" : "flex justify-end px-2 pb-0.5"}`}>{meta}</span>
+        ) : null}
+      </div>
+      {showReceiptLabel && status === "read" ? (
+        <span className="animate-fade-in mt-1 pr-1 text-[11px] text-muted">Seen</span>
+      ) : null}
+    </div>
+  )
+}
+
+function TypingBubble() {
+  return (
+    <div className="animate-message-in mt-2 flex origin-bottom-left">
+      <div className="flex items-center gap-1 rounded-[20px] rounded-bl-[6px] bg-surface px-4 py-3 shadow-[0_1px_1px_rgba(18,20,28,0.06)]">
+        {[0, 1, 2].map((dot) => (
+          <span
+            key={dot}
+            className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted/70"
+            style={{ animationDelay: `${dot * 140}ms`, animationDuration: "1s" }}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function StagedCard({ staged, onRemove }: { staged: StagedAttachment; onRemove: () => void }) {
+  const uploading = !staged.ready
+  return (
+    <div className="animate-message-in mb-2 flex items-center gap-3 rounded-2xl border border-line bg-canvas p-2 pr-3">
+      {staged.previewUrl ? (
+        <img src={staged.previewUrl} alt="" className="h-12 w-12 shrink-0 rounded-xl object-cover" />
+      ) : (
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-surface text-navy">
+          <Icons.File className="h-5 w-5" />
+        </span>
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[13px] font-semibold text-ink">{staged.file.name}</p>
+        {uploading ? (
+          <div className="mt-1.5 flex items-center gap-2">
+            <span className="h-1 flex-1 overflow-hidden rounded-full bg-line">
+              <span
+                className="block h-full rounded-full bg-navy transition-[width] duration-300 ease-out"
+                style={{ width: `${Math.max(4, staged.progress)}%` }}
+              />
+            </span>
+            <span className="font-mono text-[11px] text-muted">{staged.progress}%</span>
+          </div>
+        ) : (
+          <p className="text-[12px] text-muted">{formatBytes(staged.file.size)} · ready to send</p>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted transition-colors hover:bg-line hover:text-ink"
+        aria-label={uploading ? "Cancel upload" : "Remove attachment"}
+      >
+        <Icons.Close className="h-4 w-4" />
+      </button>
+    </div>
+  )
+}
+
+/* ─── Composer + voice recorder ──────────────────────────────────────────────────────── */
+
+function Composer({
+  draft,
+  canSend,
+  busy,
+  emojiOpen,
+  textareaRef,
+  onDraft,
+  onKeyDown,
+  onEmoji,
+  onAttach,
+  onSend,
+  onVoiceNote,
+  notify,
+}: {
+  draft: string
+  canSend: boolean
+  busy: boolean
+  emojiOpen: boolean
+  textareaRef: React.RefObject<HTMLTextAreaElement | null>
+  onDraft: (value: string) => void
+  onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void
+  onEmoji: () => void
+  onAttach: () => void
+  onSend: () => void
+  onVoiceNote: (file: File) => Promise<void>
+  notify: (message: string) => void
+}) {
+  const [recording, setRecording] = useState(false)
+  const [seconds, setSeconds] = useState(0)
+  const [sendingVoice, setSendingVoice] = useState(false)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const chunksRef = useRef<Blob[]>([])
+  const startedAtRef = useRef(0)
+  const timerRef = useRef<number | null>(null)
+  const discardRef = useRef(false)
+
+  const stopTracks = useCallback(() => {
+    if (timerRef.current) window.clearInterval(timerRef.current)
+    timerRef.current = null
+    streamRef.current?.getTracks().forEach((track) => track.stop())
+    streamRef.current = null
+  }, [])
+
+  useEffect(() => () => stopTracks(), [stopTracks])
+
+  const finish = useCallback(
+    (discard: boolean) => {
+      const recorder = recorderRef.current
+      if (!recorder) return
+      discardRef.current = discard
+      if (timerRef.current) window.clearInterval(timerRef.current)
+      timerRef.current = null
+      if (recorder.state !== "inactive") recorder.stop()
+    },
+    [],
+  )
+
+  async function start() {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      notify("Voice notes aren't supported in this browser.")
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+      })
+      streamRef.current = stream
+      chunksRef.current = []
+      const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((type) =>
+        MediaRecorder.isTypeSupported(type),
+      )
+      let recorder: MediaRecorder
+      try {
+        recorder = new MediaRecorder(stream, { audioBitsPerSecond: 20_000, ...(mimeType ? { mimeType } : {}) })
+      } catch {
+        recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+      }
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data)
+      }
+      recorder.onstop = () => {
+        // Measured from the start time, not from React state, so the 3-minute auto-stop
+        // (which fires inside the interval closure) still sees the real duration.
+        const duration = Math.min(VOICE_LIMIT_SECONDS, Math.round((Date.now() - startedAtRef.current) / 1000))
+        const discard = discardRef.current
+        const chunks = chunksRef.current
+        stopTracks()
+        recorderRef.current = null
+        setRecording(false)
+        setSeconds(0)
+        if (discard) return
+        if (chunks.length === 0 || duration < 1) {
+          notify("That voice note was too short.")
+          return
+        }
+        const type = recorder.mimeType || "audio/webm"
+        const ext = type.includes("mp4") ? "m4a" : "webm"
+        const label = `${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, "0")}`
+        const file = new File(chunks, `Voice note (${label}).${ext}`, { type })
+        setSendingVoice(true)
+        void onVoiceNote(file).finally(() => setSendingVoice(false))
+      }
+      recorderRef.current = recorder
+      discardRef.current = false
+      startedAtRef.current = Date.now()
+      recorder.start(250)
+      setRecording(true)
+      setSeconds(0)
+      timerRef.current = window.setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startedAtRef.current) / 1000)
+        setSeconds(elapsed)
+        if (elapsed >= VOICE_LIMIT_SECONDS) {
+          notify("Voice notes can be up to 3 minutes. Sending it now.")
+          finish(false)
+        }
+      }, 250)
+    } catch {
+      stopTracks()
+      notify("Coursify needs microphone access to record a voice note.")
+    }
+  }
+
+  if (recording) {
+    return (
+      <div className="animate-fade-in flex h-12 items-center gap-2">
+        <button
+          type="button"
+          onClick={() => finish(true)}
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-muted transition-colors hover:bg-canvas hover:text-[#8a3b32]"
+          aria-label="Discard voice note"
+          title="Discard"
+        >
+          <Icons.Trash className="h-5 w-5" />
+        </button>
+        <div className="flex h-11 min-w-0 flex-1 items-center gap-3 rounded-full bg-canvas px-4">
+          <span className="relative flex h-2.5 w-2.5 shrink-0">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#d64545] opacity-60" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#d64545]" />
+          </span>
+          <span className="font-mono text-[13px] font-semibold tabular-nums text-ink">
+            {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
+          </span>
+          <span className="flex h-5 min-w-0 flex-1 items-center gap-[3px] overflow-hidden">
+            {Array.from({ length: 28 }, (_, i) => (
+              <span
+                key={i}
+                className="w-[3px] shrink-0 animate-pulse rounded-full bg-navy/45"
+                style={{ height: `${30 + ((i * 37) % 70)}%`, animationDelay: `${(i % 7) * 110}ms` }}
+              />
+            ))}
+          </span>
+          <span className="hidden text-[11px] text-muted sm:inline">max 3:00</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => finish(false)}
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-navy text-white transition-transform hover:bg-navy-hover active:scale-95"
+          aria-label="Send voice note"
+          title="Send"
+        >
+          <Icons.Send className="h-5 w-5" />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault()
+        onSend()
+      }}
+      className="flex items-end gap-1.5"
+    >
+      <div className="flex min-h-11 min-w-0 flex-1 items-end rounded-[22px] bg-canvas pl-1 pr-1 transition-shadow focus-within:shadow-[0_0_0_3px_rgba(26,43,74,0.10)]">
+        <button
+          type="button"
+          onClick={onEmoji}
+          className={`grid h-11 w-10 shrink-0 place-items-center rounded-full transition-colors ${
+            emojiOpen ? "text-navy" : "text-muted hover:text-ink"
+          }`}
+          aria-label="Emoji"
+          title="Emoji"
+        >
+          <Icons.Smile className="h-5 w-5" />
+        </button>
+        <textarea
+          ref={textareaRef}
+          rows={1}
+          value={draft}
+          onChange={(event) => onDraft(event.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder={sendingVoice ? "Sending voice note…" : "Message"}
+          className="max-h-[140px] min-w-0 flex-1 resize-none bg-transparent py-[11px] text-[15px] leading-[1.4] text-ink outline-none placeholder:text-muted"
+        />
+        <button
+          type="button"
+          onClick={onAttach}
+          disabled={busy}
+          className="grid h-11 w-10 shrink-0 place-items-center rounded-full text-muted transition-colors hover:text-ink disabled:opacity-40"
+          aria-label="Attach a file"
+          title="Attach a file"
+        >
+          <Icons.Paperclip className="h-5 w-5" />
+        </button>
+      </div>
+      {canSend ? (
+        <button
+          type="submit"
+          className="animate-pop-in grid h-11 w-11 shrink-0 place-items-center rounded-full bg-navy text-white transition-transform hover:bg-navy-hover active:scale-95"
+          aria-label="Send"
+        >
+          <Icons.Send className="h-5 w-5" />
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => void start()}
+          disabled={busy || sendingVoice}
+          className="animate-pop-in grid h-11 w-11 shrink-0 place-items-center rounded-full bg-navy text-white transition-transform hover:bg-navy-hover active:scale-95 disabled:opacity-50"
+          aria-label="Record a voice note"
+          title="Record a voice note"
+        >
+          <Icons.Mic className="h-5 w-5" />
+        </button>
+      )}
+    </form>
   )
 }

@@ -15,8 +15,33 @@ This repo already includes production-ready Firebase files. You do **not** need 
 1. Open https://console.firebase.google.com and create a project (Spark / free plan is enough).
 2. Build → **Authentication** → Sign-in method → enable **Email/Password**.
 3. Build → **Firestore Database** → Create database → start in **production** mode (this repo deploys the rules).
-4. Build → **Storage** → Get started.
+4. Build → **Storage** → Get started. See **File storage** below: this step needs the Blaze plan.
 5. Project settings → **Your apps** → add a **Web** app. Copy the config values into `.env.local`.
+
+### File storage (uploads, chat attachments, voice notes)
+
+Firebase now requires the **Blaze (pay-as-you-go)** plan to create a Cloud Storage bucket. That
+includes the default `PROJECT_ID.firebasestorage.app` bucket. Blaze keeps a no-cost allowance for
+default buckets in `us-central1`, `us-east1` and `us-west1` (5 GB stored, 100 GB/month downloaded
+at the time of writing), so a small deployment usually pays nothing. **Set a budget alert** in Google
+Cloud Billing when you upgrade.
+
+Until the bucket exists, every Storage call fails. Coursify then keeps working in a degraded mode:
+
+- Files under ~650 KB are saved inside the Firestore document, so they still work on every device.
+- Larger files stay in the uploader's browser only. The app says so plainly and marks the resource
+  "Saved on this device only".
+
+After the bucket exists:
+
+```powershell
+firebase deploy --only storage
+# Allow the app to read file bytes in the browser (downloads, Word/PowerPoint previews):
+gcloud storage buckets update gs://YOUR_PROJECT_ID.firebasestorage.app --cors-file=cors.json
+```
+
+`cors.json` lists the Hosting domains and `localhost:8443`. Add any other domain you serve from.
+Uploads don't depend on CORS. Downloads and in-app previews do.
 
 ## 2. Terminal commands (from the project folder)
 

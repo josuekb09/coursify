@@ -6,7 +6,7 @@ service cloud.firestore {
     }
 
     function isFounder() {
-      return signedIn() && request.auth.token.email == 'kabuyaentambwe03@gmail.com';
+      return signedIn() && request.auth.token.email == 'kabuyatambwe03@gmail.com';
     }
 
     match /meta/{document} {

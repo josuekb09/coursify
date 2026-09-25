@@ -248,38 +248,22 @@ function Mail(p: IconProps) {
   )
 }
 
+// Brand marks are drawn in the same 1.6 stroke line style as the rest of the set so they sit
+// quietly next to Coursify's own icons instead of looking like pasted-in logos.
 function Gmail(p: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" className={p.className} fill="none" aria-hidden="true">
-      <path
-        d="M22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6Z"
-        fill="#F8F9FA"
-      />
-      <path d="M22 6 12 13 2 6v1.5l10 7 10-7V6Z" fill="#EA4335" />
-      <path d="M22 6v12c0 1.1-.9 2-2 2h-3V11l5-5Z" fill="#FBBC04" />
-      <path d="M2 6v12c0 1.1.9 2 2 2h3V11L2 6Z" fill="#4285F4" />
-      <path d="M17 20h3c1.1 0 2-.9 2-2V8.5L17 12v8Z" fill="#34A853" />
-      <path d="M7 20H4c-1.1 0-2-.9-2-2V8.5L7 12v8Z" fill="#4285F4" />
+    <svg viewBox="0 0 20 20" className={p.className} {...stroke} aria-hidden="true">
+      <path d="M3 6.5v8A1.5 1.5 0 0 0 4.5 16H6V9l4 3 4-3v7h1.5a1.5 1.5 0 0 0 1.5-1.5v-8a1.8 1.8 0 0 0-2.9-1.4L10 8 5.9 5.1A1.8 1.8 0 0 0 3 6.5Z" />
     </svg>
   )
 }
 
 function Instagram(p: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" className={p.className} fill="none" aria-hidden="true">
-      <defs>
-        <radialGradient id="coursify-ig-grad" cx="20%" cy="105%" r="120%">
-          <stop offset="0%" stopColor="#fdf497" />
-          <stop offset="15%" stopColor="#fdf497" />
-          <stop offset="50%" stopColor="#fd5949" />
-          <stop offset="70%" stopColor="#d6249f" />
-          <stop offset="95%" stopColor="#285AEB" />
-        </radialGradient>
-      </defs>
-      <rect x="2" y="2" width="20" height="20" rx="5.5" fill="url(#coursify-ig-grad)" />
-      <circle cx="12" cy="12" r="4.2" stroke="#fff" strokeWidth="1.8" />
-      <circle cx="17.4" cy="6.6" r="1.1" fill="#fff" />
-      <rect x="5.2" y="5.2" width="13.6" height="13.6" rx="3.8" stroke="#fff" strokeWidth="1.8" />
+    <svg viewBox="0 0 20 20" className={p.className} {...stroke} aria-hidden="true">
+      <rect x="3" y="3" width="14" height="14" rx="4.2" />
+      <circle cx="10" cy="10" r="3.2" />
+      <path d="M14.1 5.9h.01" strokeWidth="2.2" />
     </svg>
   )
 }
@@ -399,8 +383,8 @@ function Paperclip(p: IconProps) {
 function DoubleCheck(p: IconProps) {
   return (
     <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="m2.5 10.5 4 4 9-9" />
-      <path d="m8.5 10.5 3 3 6-6" />
+      <path d="m1.8 10.6 3.6 3.6 7.6-8.4" />
+      <path d="m9.2 13.4.8.8 7.6-8.4" />
     </svg>
   )
 }
@@ -466,7 +450,105 @@ function Folder(p: IconProps) {
   )
 }
 
+function Alert(p: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
+      <path d="M8.7 3.6 2.6 14.2A1.5 1.5 0 0 0 3.9 16.5h12.2a1.5 1.5 0 0 0 1.3-2.3L11.3 3.6a1.5 1.5 0 0 0-2.6 0Z" />
+      <path d="M10 8v3.5M10 14h.01" />
+    </svg>
+  )
+}
+
+function Clock(p: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
+      <circle cx="10" cy="10" r="7" />
+      <path d="M10 6v4l2.5 1.5" />
+    </svg>
+  )
+}
+
+function Video(p: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
+      <rect x="2.5" y="5" width="10.5" height="10" rx="2" />
+      <path d="m13 8.8 3.6-2.2a.6.6 0 0 1 .9.5v5.8a.6.6 0 0 1-.9.5L13 11.2" />
+    </svg>
+  )
+}
+
+function ArrowUpRight(p: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
+      <path d="M6.5 13.5 13.5 6.5M7.5 6.5h6v6" />
+    </svg>
+  )
+}
+
+function ArrowRight(p: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
+      <path d="M4 10h12m0 0-4.5-4.5M16 10l-4.5 4.5" />
+    </svg>
+  )
+}
+
+function Expand(p: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
+      <path d="M12 3.5h4.5V8M8 16.5H3.5V12M16.5 3.5 11.5 8.5M3.5 16.5l5-5" />
+    </svg>
+  )
+}
+
+function Users3(p: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
+      <circle cx="10" cy="6.5" r="2.5" />
+      <path d="M5.5 16c.4-2.6 2.2-4.2 4.5-4.2s4.1 1.6 4.5 4.2" />
+      <path d="M4.6 9.4a1.9 1.9 0 1 1 .3-3.7M15.4 9.4a1.9 1.9 0 1 0-.3-3.7M2 14.5c.2-1.5 1-2.6 2.2-3M18 14.5c-.2-1.5-1-2.6-2.2-3" />
+    </svg>
+  )
+}
+
+function Book(p: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
+      <path d="M10 5.5C8.5 4.3 6.3 3.8 3.5 4v11c2.8-.2 5 .3 6.5 1.5 1.5-1.2 3.7-1.7 6.5-1.5V4c-2.8-.2-5 .3-6.5 1.5Z" />
+      <path d="M10 5.5v11" />
+    </svg>
+  )
+}
+
+function Sparkle(p: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
+      <path d="M10 3c.4 3.4 1.6 4.6 5 5-3.4.4-4.6 1.6-5 5-.4-3.4-1.6-4.6-5-5 3.4-.4 4.6-1.6 5-5Z" />
+      <path d="M15.5 13.5c.2 1.3.7 1.8 2 2-1.3.2-1.8.7-2 2-.2-1.3-.7-1.8-2-2 1.3-.2 1.8-.7 2-2Z" />
+    </svg>
+  )
+}
+
+function Camera(p: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
+      <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h2l1.2-1.8h4.6L13.5 6h2A1.5 1.5 0 0 1 17 7.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14.5v-7Z" />
+      <circle cx="10" cy="10.8" r="2.8" />
+    </svg>
+  )
+}
+
 const Icons = {
+  Alert,
+  Clock,
+  Video,
+  ArrowUpRight,
+  ArrowRight,
+  Expand,
+  Users3,
+  Book,
+  Sparkle,
+  Camera,
   Calendar,
   Grid,
   Upload,

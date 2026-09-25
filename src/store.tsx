@@ -34,7 +34,16 @@ import type {
 import { isZipBytes, parsePptx } from "@/documents"
 import { extensionOf } from "@/formats"
 import { blobToDataUrl, deleteVaultFile, getVaultFile, saveVaultFile } from "@/file-vault"
-import { conversationIdFor, initialsFromName, isEducatorOnline, isHttpUrl, kindLabel, uid } from "@/utils"
+import {
+  conversationIdFor,
+  formatBytes,
+  initialsFromName,
+  isEducatorOnline,
+  isHttpUrl,
+  kindLabel,
+  normalizeMeetingUrl,
+  uid,
+} from "@/utils"
 import { playMessageChime } from "@/sound"
 import { dispatchOfflineEmailNotification } from "@/notifications"
 import {
@@ -63,6 +72,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
   type Query,
 } from "firebase/firestore"
 import {
@@ -85,6 +95,18 @@ import {
 } from "react"
 
 type FollowRow = { id: string; followerId: string; followeeId: string }
+
+/**
+ * Where an upload's bytes ended up:
+ * - "cloud": Firebase Storage, available on every device
+ * - "inline": small file stored inside the Firestore document, available on every device
+ * - "device": Storage was unreachable and the file was too large to inline; only this browser has it
+ */
+export type UploadResult = {
+  error: string | null
+  stored: "cloud" | "inline" | "device" | "none"
+  canceled?: boolean
+}
 
 type AppStore = {
   educators: Educator[]
@@ -111,7 +133,11 @@ type AppStore = {
   deleteAccount: (password: string) => Promise<string | null>
   updateProfile: (patch: ProfilePatch) => Promise<string | null>
   claimVerifiedBadge: () => Promise<string | null>
-  uploadResource: (input: UploadInput, onProgress?: (progress: number) => void) => Promise<string | null>
+  uploadResource: (
+    input: UploadInput,
+    onProgress?: (progress: number) => void,
+    signal?: AbortSignal,
+  ) => Promise<UploadResult>
   deleteResource: (id: string) => void
   downloadResource: (id: string) => Promise<Resource | undefined>
   hydrateResource: (id: string) => Promise<Resource | undefined>
@@ -125,8 +151,12 @@ type AppStore = {
   followingCount: (educatorId: string) => number
   publishPost: (body: string, resourceId?: string) => Promise<string | null>
   sendMessage: (peerId: string, body: string, attachment?: ChatAttachment) => Promise<string | null>
-  uploadChatAttachment: (file: File) => Promise<ChatAttachment>
+  uploadChatAttachment: (
+    file: File,
+    options?: { onProgress?: (progress: number) => void; signal?: AbortSignal },
+  ) => Promise<ChatAttachment>
   markConversationRead: (conversationId: string) => void
+  signalTyping: (peerId: string) => void
   conversationWith: (peerId: string) => Conversation | undefined
   messagesFor: (conversationId: string) => ChatMessage[]
   unreadIn: (conversationId: string) => number
@@ -192,8 +222,12 @@ function toResource(id: string, data: Record<string, unknown>): Resource {
     fileSize: typeof data.fileSize === "string" ? data.fileSize : undefined,
     fileBytes: typeof data.fileBytes === "number" ? data.fileBytes : undefined,
     fileData: typeof data.fileData === "string" ? data.fileData : undefined,
-    fileUrl: typeof data.fileUrl === "string" ? data.fileUrl : undefined,
+    // Older uploads stored a fake `coursify-cloud-storage://` marker when Storage failed.
+    fileUrl: typeof data.fileUrl === "string" && isHttpUrl(data.fileUrl) ? data.fileUrl : undefined,
     storagePath: typeof data.storagePath === "string" ? data.storagePath : undefined,
+    localOnly:
+      data.localOnly === true ||
+      (typeof data.fileUrl === "string" && data.fileUrl.startsWith("coursify-cloud-storage://")),
     sourceUrl: typeof data.sourceUrl === "string" ? data.sourceUrl : undefined,
     slides: Array.isArray(data.slides) ? (data.slides as Slide[]) : undefined,
     createdAt: String(data.createdAt ?? new Date().toISOString().slice(0, 10)),
@@ -221,10 +255,12 @@ function toConversation(id: string, data: Record<string, unknown>): Conversation
     participantIds: [...ids].sort() as [string, string],
     updatedAt: String(data.updatedAt ?? new Date().toISOString()),
     lastReadAt: Object.fromEntries(Object.entries(lastReadAt).map(([key, value]) => [key, String(value)])),
+    lastMessage: typeof data.lastMessage === "string" ? data.lastMessage : undefined,
+    typingAt: Object.fromEntries(Object.entries(asRecord(data.typingAt)).map(([key, value]) => [key, String(value)])),
   }
 }
 
-function toMessage(id: string, data: Record<string, unknown>): ChatMessage | null {
+function toMessage(id: string, data: Record<string, unknown>, pending = false): ChatMessage | null {
   const body = String(data.body ?? "").trim()
   if (!body && !data.attachmentUrl) return null
   if (!data.senderId || !data.conversationId) return null
@@ -238,7 +274,7 @@ function toMessage(id: string, data: Record<string, unknown>): ChatMessage | nul
     attachmentName: typeof data.attachmentName === "string" ? data.attachmentName : undefined,
     attachmentType: typeof data.attachmentType === "string" ? data.attachmentType : undefined,
     attachmentSize: typeof data.attachmentSize === "string" ? data.attachmentSize : undefined,
-    status: (data.status as "sent" | "delivered" | "read") || "delivered",
+    pending: pending || undefined,
   }
 }
 
@@ -389,13 +425,20 @@ async function fetchEducator(user: User): Promise<Educator | null> {
   }
 }
 
+// Formats whose preview is rendered from the raw bytes (DOCX text, PPTX slides, CSV, plain text).
+const PREVIEW_FETCH_LIMIT = 15 * 1024 * 1024
+
+function needsBytesForPreview(resource: Resource) {
+  const ext = extensionOf(resource.fileName ?? "")
+  if (["docx", "pptx", "csv", "txt", "md", "json", "py", "js", "ts"].includes(ext)) return true
+  return Boolean(resource.mimeType?.startsWith("text/"))
+}
+
 async function fileToDataUrl(fileUrl: string) {
   if (fileUrl.startsWith("data:")) return fileUrl
-  if (fileUrl.startsWith("coursify-cloud-storage://")) {
-    throw new Error("Local simulated storage; please download directly.")
-  }
-  const response = await withTimeout(fetch(fileUrl), 10_000, "Could not load that file. Please try again.")
-  const blob = await withTimeout(response.blob(), 10_000, "Could not read that file.")
+  const response = await withTimeout(fetch(fileUrl), 20_000, "Could not load that file. Please try again.")
+  if (!response.ok) throw new Error(`Could not load that file (HTTP ${response.status}).`)
+  const blob = await withTimeout(response.blob(), 30_000, "Could not read that file.")
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(String(reader.result))
@@ -532,69 +575,141 @@ async function deleteStorageFolder(path: string) {
   }
 }
 
+// A resumable upload is only abandoned when no bytes move for this long. Large files on a
+// slow connection keep going as long as they make progress; the user can always cancel.
+const UPLOAD_STALL_MS = 120_000
+
+export class UploadCanceledError extends Error {
+  constructor() {
+    super("Upload canceled.")
+    this.name = "UploadCanceledError"
+  }
+}
+
+class StorageUnreachableError extends Error {
+  constructor(message: string, readonly cause?: unknown) {
+    super(message)
+    this.name = "StorageUnreachableError"
+  }
+}
+
+function storageErrorCode(error: unknown) {
+  return typeof error === "object" && error && "code" in error ? String((error as { code: unknown }).code) : ""
+}
+
 /**
- * Uploads a file to Firebase Storage with a strict 45-second timeout, cancellation support,
- * and reliable progress tracking that always completes gracefully.
+ * Errors that mean "Storage cannot be reached right now" (offline, bucket missing, server
+ * unavailable, stalled) as opposed to errors that mean the upload itself is not allowed.
+ * Only the first kind may fall back to a non-cloud copy.
  */
-async function uploadStorageFileWithProgress(
-  fileRef: StorageReference,
-  file: File,
+function isStorageUnreachable(error: unknown) {
+  if (error instanceof StorageUnreachableError) return true
+  const code = storageErrorCode(error)
+  return (
+    code === "storage/retry-limit-exceeded" ||
+    code === "storage/unknown" ||
+    code === "storage/bucket-not-found" ||
+    code === "storage/project-not-found" ||
+    code === "storage/server-file-wrong-size" ||
+    code === "storage/no-default-bucket" ||
+    code === "storage/internal-error"
+  )
+}
+
+/**
+ * Uploads a file to Firebase Storage with the resumable API. Progress is reported from real
+ * byte counts, the caller can cancel through `signal`, and the upload only times out when it
+ * stops making progress for UPLOAD_STALL_MS.
+ */
+async function uploadToStorage(
+  path: string,
+  file: Blob,
   contentType: string,
-  onProgress?: (progress: number) => void,
-  timeoutMs = 45_000,
+  options: { onProgress?: (progress: number) => void; signal?: AbortSignal } = {},
 ): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
-    let finished = false
+  const { onProgress, signal } = options
+  if (signal?.aborted) throw new UploadCanceledError()
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    throw new StorageUnreachableError("You appear to be offline.")
+  }
+  const fileRef: StorageReference = storageRef(getFirebaseStorage(), path)
+
+  await new Promise<void>((resolve, reject) => {
+    let settled = false
+    let stallTimer = 0
     const task = uploadBytesResumable(fileRef, file, { contentType })
 
-    const timer = window.setTimeout(() => {
-      if (finished) return
-      finished = true
-      try {
+    const finish = (error?: unknown) => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(stallTimer)
+      signal?.removeEventListener("abort", onAbort)
+      if (error) reject(error)
+      else resolve()
+    }
+    const armStallTimer = () => {
+      window.clearTimeout(stallTimer)
+      stallTimer = window.setTimeout(() => {
         task.cancel()
-      } catch {
-        /* ignore */
-      }
-      reject(
-        new Error(
-          "File upload timed out after 45 seconds. Please check your network connection and try again.",
-        ),
-      )
-    }, timeoutMs)
+        finish(new StorageUnreachableError("The upload stopped making progress."))
+      }, UPLOAD_STALL_MS)
+    }
+    function onAbort() {
+      task.cancel()
+      finish(new UploadCanceledError())
+    }
 
+    signal?.addEventListener("abort", onAbort)
+    armStallTimer()
     task.on(
       "state_changed",
       (snapshot) => {
-        if (finished) return
+        armStallTimer()
         const total = snapshot.totalBytes || file.size || 1
-        const pct = Math.min(99, Math.max(0, Math.round((snapshot.bytesTransferred / total) * 100)))
-        onProgress?.(pct)
+        onProgress?.(Math.min(99, Math.round((snapshot.bytesTransferred / total) * 100)))
       },
-      (error) => {
-        if (finished) return
-        finished = true
-        window.clearTimeout(timer)
-        reject(error)
-      },
-      async () => {
-        if (finished) return
-        finished = true
-        window.clearTimeout(timer)
-        try {
-          const downloadUrl = await withTimeout(
-            getDownloadURL(fileRef),
-            15_000,
-            "Uploaded file, but could not generate download link. Please try again.",
-          )
-          onProgress?.(100)
-          resolve(downloadUrl)
-        } catch (err) {
-          reject(err)
-        }
-      },
+      (error) => finish(storageErrorCode(error) === "storage/canceled" ? new UploadCanceledError() : error),
+      () => finish(),
     )
   })
+
+  const url = await withTimeout(
+    getDownloadURL(fileRef),
+    20_000,
+    "The file uploaded, but its download link could not be created. Please try again.",
+  )
+  onProgress?.(100)
+  return url
 }
+
+const MIME_BY_EXTENSION: Record<string, string> = {
+  pdf: "application/pdf",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ppt: "application/vnd.ms-powerpoint",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  doc: "application/msword",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  xls: "application/vnd.ms-excel",
+  csv: "text/csv",
+  zip: "application/zip",
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mov: "video/quicktime",
+  m4v: "video/x-m4v",
+  json: "application/json",
+  txt: "text/plain",
+  md: "text/markdown",
+  py: "text/x-python",
+  js: "text/javascript",
+  ts: "text/typescript",
+}
+
+function contentTypeFor(file: File) {
+  return file.type || MIME_BY_EXTENSION[extensionOf(file.name)] || "application/octet-stream"
+}
+
+// Firestore documents are capped at 1 MiB, so only small files can travel inside one.
+const INLINE_FILE_LIMIT = 650_000
 
 export default function AppProvider({ children }: { children: ReactNode }) {
   const [authUser, setAuthUser] = useState<User | null>(null)
@@ -807,9 +922,11 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       ),
       onSnapshot(
         query(collection(db, "messages"), where("participantIds", "array-contains", authUser.uid)),
+        // Metadata changes let an outgoing message flip from "sending" to "sent" once the server acks it.
+        { includeMetadataChanges: true },
         (snap) => {
           const incoming = snap.docs
-            .map((item) => toMessage(item.id, asRecord(item.data())))
+            .map((item) => toMessage(item.id, asRecord(item.data()), item.metadata.hasPendingWrites))
             .filter((item): item is ChatMessage => item !== null)
             .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))
 
@@ -1217,104 +1334,65 @@ export default function AppProvider({ children }: { children: ReactNode }) {
   }, [authUser, currentUser?.id])
 
   const uploadResource = useCallback(
-    async (input: UploadInput, onProgress?: (progress: number) => void) => {
-      if (!authUser || !currentUser) return "Sign in to upload."
+    async (
+      input: UploadInput,
+      onProgress?: (progress: number) => void,
+      signal?: AbortSignal,
+    ): Promise<UploadResult> => {
+      const fail = (error: string): UploadResult => ({ error, stored: "none" })
+      if (!authUser || !currentUser) return fail("Sign in to upload.")
       const title = sanitizePlainText(input.title, 160)
-      if (!title) return "Give the resource a title."
+      if (!title) return fail("Give the resource a title.")
       const issue = uploadIssue({ ...input, sourceUrl: input.sourceUrl ?? "" })
-      if (issue) return issue
+      if (issue) return fail(issue)
       if (input.file && input.file.size > MAX_FILE_BYTES) {
-        return `Please keep uploads at or below ${Math.round(MAX_FILE_BYTES / 1_048_576)} MB.`
+        return fail(`Please keep uploads at or below ${Math.round(MAX_FILE_BYTES / 1_048_576)} MB.`)
       }
       const size = input.file?.size ?? 0
       if (currentUser.storageBytes + size > STORAGE_CAP_BYTES) {
-        return "Not enough storage for this file."
+        return fail("Not enough storage for this file.")
       }
       let storagePath: string | undefined
+      let uploadedPath: string | undefined
+      let stored: UploadResult["stored"] = "none"
+      const resourceId = uid("res")
       try {
-        const resourceId = uid("res")
         let fileUrl: string | undefined
         let fileData: string | undefined
         let extractedSlides: Slide[] | undefined
 
         if (input.file) {
           const fileName = input.file.name.replace(/[\\/#?\[\]]/g, "_")
-          const ext = extensionOf(input.file.name)
-          const contentType =
-            input.file.type ||
-            (ext === "pdf"
-              ? "application/pdf"
-              : ext === "pptx"
-                ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                : ext === "ppt"
-                  ? "application/vnd.ms-powerpoint"
-                  : ext === "docx"
-                    ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    : ext === "doc"
-                      ? "application/msword"
-                      : ext === "xlsx"
-                        ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        : ext === "xls"
-                          ? "application/vnd.ms-excel"
-                          : ext === "csv"
-                            ? "text/csv"
-                            : ext === "zip"
-                              ? "application/zip"
-                              : ext === "mp4"
-                                ? "video/mp4"
-                                : ext === "webm"
-                                  ? "video/webm"
-                                  : ext === "json"
-                                    ? "application/json"
-                                    : ext === "txt"
-                                      ? "text/plain"
-                                      : ext === "py"
-                                        ? "text/x-python"
-                                        : ext === "js"
-                                          ? "text/javascript"
-                                          : ext === "ts"
-                                            ? "text/typescript"
-                                            : "application/octet-stream")
+          const contentType = contentTypeFor(input.file)
 
-          // Always persist into client-side IndexedDB vault for guaranteed authentic retention
+          // Keep the original bytes on this device so previews open instantly here.
           await saveVaultFile(resourceId, input.file, fileName, contentType)
 
-          // Check if PPTX / slides
-          if (input.file.name.toLowerCase().endsWith(".pptx") || input.format === "slides") {
+          if (input.file.name.toLowerCase().endsWith(".pptx")) {
             extractedSlides = await extractPptxSlides(input.file)
           }
 
-          // Try Firebase Storage with 5-second graceful fallback
-          let storageAttemptSucceeded = false
           try {
             storagePath = `resources/${authUser.uid}/${resourceId}/${fileName}`
-            const fileRef = storageRef(getFirebaseStorage(), storagePath)
-            fileUrl = await uploadStorageFileWithProgress(
-              fileRef,
-              input.file,
-              contentType,
-              onProgress,
-              5_000,
-            )
-            storageAttemptSucceeded = true
-          } catch {
-            // Firebase Storage failed or uninitialized or requires billing (Spark plan)
+            fileUrl = await uploadToStorage(storagePath, input.file, contentType, { onProgress, signal })
+            uploadedPath = storagePath
+            stored = "cloud"
+          } catch (error) {
             storagePath = undefined
-            fileUrl = undefined
-          }
-
-          // If Firebase Storage did not succeed, use fallback
-          if (!storageAttemptSucceeded) {
-            onProgress?.(50)
-            // Files <= 650 KB safely fit inside Firestore's 1 MiB document limit as Base64 Data URI
-            if (size <= 650_000) {
+            if (error instanceof UploadCanceledError) {
+              void deleteVaultFile(resourceId)
+              return { error: "Upload canceled.", stored: "none", canceled: true }
+            }
+            if (!isStorageUnreachable(error)) throw error
+            console.warn("Firebase Storage unreachable, using fallback copy.", error)
+            if (size <= INLINE_FILE_LIMIT) {
+              // Small files fit inside the Firestore document, so they still reach every device.
               fileData = await readFileAsDataUrl(input.file)
               setHydratedFiles((current) => ({ ...current, [resourceId]: fileData! }))
+              stored = "inline"
             } else {
-              // Large files (> 650 KB): cache in browser object URL and save complete metadata in Firestore
-              const localBlobUrl = URL.createObjectURL(input.file)
-              setHydratedFiles((current) => ({ ...current, [resourceId]: localBlobUrl }))
-              fileUrl = `coursify-cloud-storage://${resourceId}/${fileName}`
+              // Too big for Firestore: only this browser's vault holds the bytes.
+              stored = "device"
             }
             onProgress?.(100)
           }
@@ -1341,6 +1419,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
           fileData,
           fileUrl,
           storagePath,
+          localOnly: stored === "device" ? true : undefined,
           slides: extractedSlides ?? input.slides,
           hasFile: Boolean(fileData || fileUrl || storagePath || input.file),
           sourceUrl: sanitizePlainText(input.sourceUrl ?? "", 500) || undefined,
@@ -1363,13 +1442,14 @@ export default function AppProvider({ children }: { children: ReactNode }) {
             }),
           )
         }
-        notify(`${title} was added to your library.`)
-        return null
+        if (stored !== "device") notify(`${title} was added to your library.`)
+        return { error: null, stored }
       } catch (error) {
-        if (storagePath) {
-          await deleteObject(storageRef(getFirebaseStorage(), storagePath)).catch(() => undefined)
+        if (uploadedPath) {
+          await deleteObject(storageRef(getFirebaseStorage(), uploadedPath)).catch(() => undefined)
         }
-        return firebaseErrorMessage(error)
+        void deleteVaultFile(resourceId)
+        return { error: firebaseErrorMessage(error), stored: "none" as const }
       }
     },
     [authUser, currentUser, notify],
@@ -1421,25 +1501,39 @@ export default function AppProvider({ children }: { children: ReactNode }) {
             hasFile: true,
           }
         }
-      } catch {
-        // Vault fallback
+      } catch (error) {
+        console.warn("Could not read the local file vault.", error)
       }
-      if (resource.storagePath && (!resource.fileUrl || resource.fileUrl.startsWith("coursify-cloud-storage://"))) {
+      // Device-only uploads have no cloud copy; the preview explains that to the viewer.
+      if (resource.localOnly) return resource
+
+      let fileUrl = resource.fileUrl
+      if (!fileUrl && resource.storagePath) {
         try {
-          const fileRef = storageRef(getFirebaseStorage(), resource.storagePath)
-          const downloadUrl = await getDownloadURL(fileRef)
-          return { ...resource, fileUrl: downloadUrl, hasFile: true }
-        } catch {
-          // Storage fetch fallback
+          fileUrl = await withTimeout(
+            getDownloadURL(storageRef(getFirebaseStorage(), resource.storagePath)),
+            10_000,
+            "Could not reach file storage.",
+          )
+        } catch (error) {
+          console.warn("Could not resolve the Storage download link.", error)
+          return resource
         }
       }
-      if (!resource.fileUrl || resource.fileUrl.startsWith("coursify-cloud-storage://")) return resource
+      if (!fileUrl) return resource
+
+      // PDFs, videos and archives are previewed or downloaded straight from their URL. Only
+      // formats the app parses in the browser need their bytes, and only when reasonably small.
+      if (!needsBytesForPreview(resource) || (resource.fileBytes ?? 0) > PREVIEW_FETCH_LIMIT) {
+        return { ...resource, fileUrl, hasFile: true }
+      }
       try {
-        const fileData = await fileToDataUrl(resource.fileUrl)
+        const fileData = await fileToDataUrl(fileUrl)
         setHydratedFiles((current) => ({ ...current, [id]: fileData }))
-        return { ...resource, fileData, hasFile: true }
-      } catch {
-        return resource
+        return { ...resource, fileUrl, fileData, hasFile: true }
+      } catch (error) {
+        console.warn("Could not fetch the file for preview.", error)
+        return { ...resource, fileUrl, hasFile: true }
       }
     },
     [hydratedFiles, resources],
@@ -1562,68 +1656,53 @@ export default function AppProvider({ children }: { children: ReactNode }) {
   )
 
   const uploadChatAttachment = useCallback(
-    async (file: File): Promise<ChatAttachment> => {
+    async (
+      file: File,
+      options: { onProgress?: (progress: number) => void; signal?: AbortSignal } = {},
+    ): Promise<ChatAttachment> => {
       if (!authUser) throw new Error("Sign in to send attachments.")
       if (file.size > MAX_FILE_BYTES) {
-        throw new Error(`Chat attachments must be ${Math.round(MAX_FILE_BYTES / 1_048_576)}MB or less.`)
+        throw new Error(`Attachments must be ${Math.round(MAX_FILE_BYTES / 1_048_576)} MB or less.`)
+      }
+      if ((currentUser?.storageBytes ?? 0) + file.size > STORAGE_CAP_BYTES) {
+        throw new Error("Not enough storage left for this attachment.")
       }
       const fileId = uid("att")
       const safeName = file.name.replace(/[\\/#?\[\]]/g, "_")
-      const contentType = file.type || "application/octet-stream"
-      const formatSize = `${(file.size / 1_048_576).toFixed(1)} MB`
+      const contentType = contentTypeFor(file)
+      const size = formatBytes(file.size)
 
-      // Try Firebase Storage with 5-second graceful fallback
       try {
-        const storagePath = `resources/${authUser.uid}/chat/${fileId}_${safeName}`
-        const fileRef = storageRef(getFirebaseStorage(), storagePath)
-        const url = await uploadStorageFileWithProgress(
-          fileRef,
+        const url = await uploadToStorage(
+          `resources/${authUser.uid}/chat/${fileId}_${safeName}`,
           file,
           contentType,
-          undefined,
-          5_000,
+          options,
         )
-        return {
-          url,
-          name: file.name,
-          type: contentType,
-          size: formatSize,
-        }
-      } catch {
-        // Fallback: If Firebase Storage fails or is unavailable on Spark free plan
-        if (file.type.startsWith("image/")) {
-          try {
-            const { dataUrl, sizeStr } = await compressImageToSafeDataUrl(file)
-            if (dataUrl.length > 700_000) {
-              throw new Error("File is too large. Please record a shorter voice note or select a smaller image.")
-            }
-            return {
-              url: dataUrl,
-              name: file.name,
-              type: "image/jpeg",
-              size: sizeStr,
-            }
-          } catch (e: any) {
-            if (e?.message?.includes("File is too large")) throw e
-          }
-        }
-        if (file.size <= 500_000) {
-          const dataUrl = await readFileAsDataUrl(file)
-          if (dataUrl.length > 700_000) {
-            throw new Error("File is too large. Please record a shorter voice note or select a smaller image.")
-          }
-          const sizeKb = Math.round(file.size / 1024)
-          return {
-            url: dataUrl,
-            name: file.name,
-            type: contentType,
-            size: `${sizeKb} KB`,
-          }
-        }
-        throw new Error("File is too large. Please record a shorter voice note or select a smaller image.")
+        // Chat files live in the same bucket folder as resources, so they count toward the quota.
+        await timedWrite(
+          updateDoc(doc(getFirebaseDb(), "educators", authUser.uid), { storageBytes: increment(file.size) }),
+        ).catch((error) => console.warn("Could not update storage usage.", error))
+        return { url, name: file.name, type: contentType, size }
+      } catch (error) {
+        if (error instanceof UploadCanceledError || !isStorageUnreachable(error)) throw error
+        console.warn("Firebase Storage unreachable, sending attachment inline.", error)
       }
+
+      // Storage is unreachable. Small files can still travel inside the message document,
+      // which both participants can read on any device.
+      if (file.type.startsWith("image/")) {
+        const { dataUrl, sizeStr } = await compressImageToSafeDataUrl(file)
+        if (dataUrl.length <= 700_000) return { url: dataUrl, name: file.name, type: "image/jpeg", size: sizeStr }
+      } else if (file.size <= 500_000) {
+        const dataUrl = await readFileAsDataUrl(file)
+        if (dataUrl.length <= 700_000) return { url: dataUrl, name: file.name, type: contentType, size }
+      }
+      throw new Error(
+        "File storage is unreachable right now, so only files under 500 KB can be sent. Try again when your connection is back.",
+      )
     },
-    [authUser],
+    [authUser, currentUser?.storageBytes],
   )
 
   const sendMessage = useCallback(
@@ -1633,54 +1712,50 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       const text = sanitizePlainText(body, 2000)
       if (!text && !attachment) return "Write a message or attach a file first."
       if (attachment?.url && attachment.url.length > 700_000) {
-        return "File is too large. Please record a shorter voice note or select a smaller image."
+        return "That attachment is too large to send. Try a smaller file."
       }
       const now = new Date().toISOString()
       const conversationId = conversationIdFor(authUser.uid, peerId)
       const participantIds = [authUser.uid, peerId].sort()
       const previewText = text || (attachment ? `Shared ${attachment.name}` : "Shared an attachment")
+      const db = getFirebaseDb()
       try {
-        await timedWrite(
-          setDoc(
-            doc(getFirebaseDb(), "conversations", conversationId),
-            {
-              participantIds,
-              updatedAt: now,
-              lastMessage: previewText,
-            },
-            { merge: true },
-          ),
+        // One atomic batch: the message lands in the local cache immediately (the "sending"
+        // tick) and the conversation preview and read marker can never disagree with it.
+        const batch = writeBatch(db)
+        batch.set(
+          doc(db, "conversations", conversationId),
+          {
+            participantIds,
+            updatedAt: now,
+            lastMessage: previewText,
+            lastReadAt: { [authUser.uid]: now },
+            typingAt: { [authUser.uid]: deleteField() },
+          },
+          { merge: true },
         )
-        await timedWrite(
-          updateDoc(doc(getFirebaseDb(), "conversations", conversationId), {
-            [`lastReadAt.${authUser.uid}`]: now,
+        batch.set(
+          doc(collection(db, "messages")),
+          compact({
+            conversationId,
+            senderId: authUser.uid,
+            body: text || (attachment ? `Shared ${attachment.name}` : ""),
+            createdAt: now,
+            participantIds,
+            attachmentUrl: attachment?.url,
+            attachmentName: attachment?.name,
+            attachmentType: attachment?.type,
+            attachmentSize: attachment?.size,
           }),
         )
-        await timedWrite(
-          addDoc(
-            collection(getFirebaseDb(), "messages"),
-            compact({
-              conversationId,
-              senderId: authUser.uid,
-              body: text || (attachment ? `Shared ${attachment.name}` : ""),
-              createdAt: now,
-              participantIds,
-              attachmentUrl: attachment?.url,
-              attachmentName: attachment?.name,
-              attachmentType: attachment?.type,
-              attachmentSize: attachment?.size,
-              status: "delivered",
-            }),
-          ),
-        )
+        await timedWrite(batch.commit())
 
-        // Automated email notification when recipient is offline
         const recipient = educators.find((e) => e.id === peerId)
         if (recipient && !isEducatorOnline(recipient.lastActiveAt)) {
           void dispatchOfflineEmailNotification({
             recipientEmail: recipient.email,
             recipientName: recipient.name,
-            senderName: currentUser?.name || "A faculty colleague",
+            senderName: currentUser?.name || "A colleague",
             messageSnippet: previewText,
           })
         }
@@ -1688,13 +1763,8 @@ export default function AppProvider({ children }: { children: ReactNode }) {
         return null
       } catch (error: any) {
         const msg = String(error?.message || error || "")
-        if (
-          msg.includes("longer than 1048487 bytes") ||
-          msg.includes("longer than") ||
-          msg.includes("maximum size") ||
-          msg.includes("exceeds the maximum allowed size")
-        ) {
-          return "File is too large. Please record a shorter voice note or select a smaller image."
+        if (msg.includes("longer than") || msg.includes("maximum size") || msg.includes("exceeds the maximum")) {
+          return "That attachment is too large to send. Try a smaller file."
         }
         return firebaseErrorMessage(error)
       }
@@ -1705,11 +1775,35 @@ export default function AppProvider({ children }: { children: ReactNode }) {
   const markConversationRead = useCallback(
     (conversationId: string) => {
       if (!authUser) return
+      const conversation = conversations.find((item) => item.id === conversationId)
+      if (!conversation) return
+      const lastRead = conversation.lastReadAt[authUser.uid] ?? ""
+      const hasUnread = messages.some(
+        (item) => item.conversationId === conversationId && item.senderId !== authUser.uid && item.createdAt > lastRead,
+      )
+      if (!hasUnread) return
       void updateDoc(doc(getFirebaseDb(), "conversations", conversationId), {
         [`lastReadAt.${authUser.uid}`]: new Date().toISOString(),
       }).catch(() => undefined)
     },
-    [authUser],
+    [authUser, conversations, messages],
+  )
+
+  const lastTypingWriteRef = useRef(0)
+  const signalTyping = useCallback(
+    (peerId: string) => {
+      if (!authUser) return
+      const now = Date.now()
+      if (now - lastTypingWriteRef.current < 4_000) return
+      const conversationId = conversationIdFor(authUser.uid, peerId)
+      // Only existing conversations: typing must never create an empty thread.
+      if (!conversations.some((item) => item.id === conversationId)) return
+      lastTypingWriteRef.current = now
+      void updateDoc(doc(getFirebaseDb(), "conversations", conversationId), {
+        [`typingAt.${authUser.uid}`]: new Date(now).toISOString(),
+      }).catch(() => undefined)
+    },
+    [authUser, conversations],
   )
 
   const conversationWith = useCallback(
@@ -1780,14 +1874,14 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       if (!input.startsAt) return "Choose a date and time."
       const startsAt = new Date(input.startsAt)
       if (Number.isNaN(startsAt.getTime())) return "Enter a valid date and time."
+      if (startsAt.getTime() < Date.now() - 5 * 60_000) return "Choose a date and time in the future."
       if (input.format === "in-person") {
         const location = sanitizePlainText(input.location ?? "", 240)
         if (!location) return "Add a venue or address for this in-person meetup."
       }
       if (input.format === "online") {
-        let meetingUrl = (input.meetingUrl ?? "").trim()
-        if (meetingUrl && !/^https?:\/\//i.test(meetingUrl)) meetingUrl = `https://${meetingUrl}`
-        if (!isHttpUrl(meetingUrl)) return "Add a Zoom, Google Meet, or other conference link."
+        const meetingUrl = normalizeMeetingUrl(input.meetingUrl ?? "")
+        if (!meetingUrl) return "Add a valid meeting link, e.g. https://meet.google.com/abc-defg-hij"
         input = { ...input, meetingUrl }
       }
       try {
@@ -1908,6 +2002,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       sendMessage,
       uploadChatAttachment,
       markConversationRead,
+      signalTyping,
       conversationWith,
       messagesFor,
       unreadIn,
@@ -1946,6 +2041,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       login,
       logout,
       markConversationRead,
+      signalTyping,
       messages,
       messagesFor,
       myResources,

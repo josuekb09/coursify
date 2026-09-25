@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "format": "oxfmt",
+    "test:storage": "firebase emulators:exec --only auth,storage --project demo-coursify \"node scripts/storage-roundtrip.test.mjs\"",
     "deploy": "npm run build && firebase deploy"
   },
   "dependencies": {

@@ -2,7 +2,7 @@ import type { InstitutionLevel, Subject } from "@/types"
 import { isSubject, normalizeSubject } from "@/data"
 import { initialsFromName } from "@/utils"
 
-export const FOUNDER_EMAIL = "kabuyaentambwe03@gmail.com"
+export const FOUNDER_EMAIL = "kabuyatambwe03@gmail.com"
 
 export function isFounderEmail(email: string) {
   return normalizeEmail(email) === FOUNDER_EMAIL

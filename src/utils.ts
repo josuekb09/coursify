@@ -238,11 +238,59 @@ export function mapsSearchUrl(address: string) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
 }
 
+/**
+ * Returns a normalised https meeting link, or "" when the value can't be a real meeting URL.
+ * A bare hostname like "https://zoom" is rejected: it has to have a dot-separated domain.
+ */
+export function normalizeMeetingUrl(value: string) {
+  let candidate = value.trim()
+  if (!candidate) return ""
+  if (!/^https?:\/\//i.test(candidate)) candidate = `https://${candidate}`
+  try {
+    const url = new URL(candidate)
+    if (url.protocol !== "https:" && url.protocol !== "http:") return ""
+    if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(url.hostname)) return ""
+    return url.toString()
+  } catch {
+    return ""
+  }
+}
+
+export function meetingProvider(url: string) {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "")
+    if (host === "meet.google.com") return "Google Meet"
+    if (host.endsWith("zoom.us")) return "Zoom"
+    if (host.endsWith("teams.microsoft.com") || host.endsWith("teams.live.com")) return "Microsoft Teams"
+    if (host.endsWith("webex.com")) return "Webex"
+    return host
+  } catch {
+    return "Online"
+  }
+}
+
 export function isUpcomingEvent(iso: string) {
   return new Date(iso).getTime() >= Date.now() - 60 * 60 * 1000
 }
 
-export function deliverResource(resource: Resource, author: string): "download" | "open" {
+/**
+ * Downloads a file from a cross-origin URL (e.g. Firebase Storage) under its real name. The
+ * `download` attribute is ignored cross-origin, so the bytes are fetched first; if the bucket's
+ * CORS policy blocks that, the file opens in a new tab instead.
+ */
+export async function downloadRemoteFile(url: string, filename: string): Promise<"download" | "open"> {
+  try {
+    const response = await fetch(url)
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    downloadBlob(filename, await response.blob())
+    return "download"
+  } catch {
+    window.open(url, "_blank", "noopener,noreferrer")
+    return "open"
+  }
+}
+
+export async function deliverResource(resource: Resource): Promise<"download" | "open"> {
   const targetName = resource.fileName || resourceFilename(resource.title, resource.format)
 
   if (resource.fileData) {
@@ -250,31 +298,19 @@ export function deliverResource(resource: Resource, author: string): "download" 
     return "download"
   }
 
-  const isDirectUrl =
-    Boolean(resource.fileUrl) &&
-    (resource.fileUrl!.startsWith("http://") ||
-      resource.fileUrl!.startsWith("https://") ||
-      resource.fileUrl!.startsWith("blob:") ||
-      resource.fileUrl!.startsWith("data:"))
-
-  if (isDirectUrl && resource.fileUrl) {
-    const anchor = document.createElement("a")
-    anchor.href = resource.fileUrl
-    anchor.download = targetName
-    anchor.target = "_blank"
-    anchor.rel = "noopener noreferrer"
-    document.body.appendChild(anchor)
-    anchor.click()
-    anchor.remove()
-    return "download"
+  if (resource.fileUrl && isHttpUrl(resource.fileUrl)) {
+    return downloadRemoteFile(resource.fileUrl, targetName)
   }
 
-  if (resource.sourceUrl && (resource.sourceUrl.startsWith("http://") || resource.sourceUrl.startsWith("https://"))) {
+  if (resource.sourceUrl && isHttpUrl(resource.sourceUrl)) {
     window.open(resource.sourceUrl, "_blank", "noopener,noreferrer")
     return "open"
   }
 
-  return "download"
+  if (resource.localOnly) {
+    throw new Error("This file was saved only on the uploader's device, so it can't be downloaded here.")
+  }
+  throw new Error("This file isn't available right now. Please try again later.")
 }
 
 export function isEducatorOnline(lastActiveAt?: string | null): boolean {

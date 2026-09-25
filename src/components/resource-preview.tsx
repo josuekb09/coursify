@@ -61,7 +61,7 @@ export default function ResourcePreview({
     try {
       const next = await downloadResource(resource.id)
       const current = next ?? full
-      const action = deliverResource(current, author)
+      const action = await deliverResource(current)
       notify(action === "open" ? `Opening ${current.title}` : `Downloading ${current.title}`)
     } catch (error) {
       notify(error instanceof Error ? error.message : "Could not download that resource. Please try again.")
@@ -185,6 +185,16 @@ function useObjectUrl(dataUrl?: string) {
 function PreviewCanvas({ resource, author }: { resource: Resource; author: string }) {
   const embed = resource.sourceUrl ? videoEmbedUrl(resource.sourceUrl) : null
   const github = resource.sourceUrl ? parseGitHubRepo(resource.sourceUrl) : null
+
+  if (resource.localOnly && !resource.fileData && !embed && !github) {
+    return (
+      <FileNotice
+        title={resource.fileName ?? resource.title}
+        body="This file was saved while cloud storage was unreachable, so it only exists on the device it was uploaded from. Ask the author to upload it again to make it available everywhere."
+        meta={resource.fileSize ? `${resource.fileSize} · ${resource.grade}` : resource.grade}
+      />
+    )
+  }
 
   if (resource.format === "video" && embed) {
     return (

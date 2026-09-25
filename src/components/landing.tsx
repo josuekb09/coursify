@@ -1,808 +1,681 @@
 import Icons from "@/components/icons"
-import Logo from "@/components/logo"
-import { uid } from "@/utils"
-import { useState, type FormEvent } from "react"
+import Logo, { CoursifyMark } from "@/components/logo"
+import { FOUNDER_EMAIL } from "@/security"
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react"
 
-const SUPPORT_EMAIL = "kabuyaentambwe03@gmail.com"
+const SUPPORT_EMAIL = FOUNDER_EMAIL
 const INSTAGRAM_HANDLE = "@cours.ify"
 const INSTAGRAM_URL = "https://www.instagram.com/cours.ify/"
-const CONTACT_KEY = "coursify.contact.v1"
 
-const field =
-  "h-11 w-full rounded-lg border border-line bg-canvas px-3.5 text-sm text-ink outline-none transition-[border-color,box-shadow] focus:border-navy focus:shadow-[0_0_0_4px_rgba(26,43,74,0.12)]"
-
+// Public-domain photography; sources and licences are listed in public/landing-images/SOURCES.md.
 const photos = {
-  hero: encodeURI("/landing-images/picture 1.jpg"),
-  workspace: encodeURI("/landing-images/picture 2.jpg"),
-  meetups: encodeURI("/landing-images/picture 3.jpg"),
-  mission: encodeURI("/landing-images/picture 4.jpg"),
+  hero: "/landing-images/hero-science-class.jpg",
+  planning: "/landing-images/teachers-planning.jpg",
+  workshop: "/landing-images/teacher-workshop.jpg",
+  mission: "/landing-images/reading-lesson.jpg",
 }
+
+const nav = [
+  { href: "#product", label: "Product" },
+  { href: "#how-it-works", label: "How it works" },
+  { href: "#meetups", label: "Meetups" },
+  { href: "#mission", label: "Why Coursify" },
+  { href: "#contact", label: "Contact" },
+]
 
 const features = [
   {
-    icon: "Upload" as const,
-    title: "A shared lesson library",
-    body: "Publish plans, slides, and worksheets once. Organize them by subject and grade so colleagues can reuse what already works.",
+    icon: Icons.Book,
+    title: "A library that thinks in grades and terms",
+    body: "Worksheets, slide decks, lesson plans, marking memos and videos, filed by subject and grade. Preview a PowerPoint or a Word document before you download it.",
   },
   {
-    icon: "VerifiedSeal" as const,
-    title: "A verified teaching profile",
-    body: "Your name, school, subjects, and credentials sit on a portable profile that reads as a professional portfolio, not a social feed.",
+    icon: Icons.Message,
+    title: "The author is one message away",
+    body: "Found a Grade 11 Life Sciences practical you like? Ask the teacher who wrote it how it went with their class. Messages, files and voice notes, in real time.",
   },
   {
-    icon: "Message" as const,
-    title: "Direct faculty collaboration",
-    body: "Message colleagues, follow their work, and keep curriculum conversation inside a quiet workspace built for educators.",
+    icon: Icons.Award,
+    title: "A profile that doubles as your portfolio",
+    body: "Your school, your subjects and everything you've shared, on one page. Export a CV from it when a post opens up or your HOD asks.",
+  },
+  {
+    icon: Icons.Calendar,
+    title: "Meetups that actually get planned",
+    body: "Subject clusters, moderation prep, Saturday workshops. Post the details once and see who's coming, in person or online.",
   },
 ]
 
-const classrooms = [
+const steps = [
   {
-    src: photos.workspace,
-    alt: "Educator planning lessons on a laptop at a classroom desk",
-    title: "The planning table",
-    body: "Lesson design happens at a desk, not in a feed. Keep files, notes, and grade-level collections in one place.",
+    title: "Search before you start",
+    body: "Sunday evening, Term 3, Euclidean geometry. Chances are another teacher has already built the worksheet.",
   },
   {
-    src: photos.meetups,
-    alt: "Faculty workshop with an educator presenting to colleagues",
-    title: "The faculty room",
-    body: "Workshops, department huddles, and after-school sessions are easier when the people and the materials are already together.",
-  },
-]
-
-const meetupPoints = [
-  {
-    title: "In person",
-    body: "Host a department session, add a venue, and let colleagues RSVP from their phones.",
+    title: "Adapt it for your class",
+    body: "Download the original file, not a flattened copy. Change the examples, keep the structure, save hours.",
   },
   {
-    title: "Online",
-    body: "Share a Meet or Zoom link. Educators who are going see the join button when it is time.",
-  },
-  {
-    title: "On the calendar",
-    body: "Upcoming, hosting, and going views keep faculty time easy to find without another app.",
+    title: "Share what you improve",
+    body: "Upload your version with one click. The next teacher starts from your work instead of a blank page.",
   },
 ]
 
-type ContactRecord = {
-  id: string
-  name: string
-  email: string
-  message: string
-  createdAt: string
+const formats = ["PDF", "Word", "PowerPoint", "Excel", "Video", "ZIP", "Links"]
+
+/* ─── Small building blocks ──────────────────────────────────────────────────────────── */
+
+function Reveal({ children, className = "", delay = 0 }: { children: ReactNode; className?: string; delay?: number }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (typeof IntersectionObserver === "undefined") {
+      setVisible(true)
+      return
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true)
+          observer.disconnect()
+        }
+      },
+      { rootMargin: "0px 0px -10% 0px" },
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+  return (
+    <div
+      ref={ref}
+      className={`${className} ${visible ? "animate-rise" : "opacity-0"}`}
+      style={visible && delay ? { animationDelay: `${delay}ms` } : undefined}
+    >
+      {children}
+    </div>
+  )
 }
 
-function persistContact(record: ContactRecord) {
-  try {
-    const raw = localStorage.getItem(CONTACT_KEY)
-    const existing = raw ? (JSON.parse(raw) as ContactRecord[]) : []
-    const next = Array.isArray(existing) ? existing : []
-    localStorage.setItem(CONTACT_KEY, JSON.stringify([record, ...next]))
-  } catch {
-    /* Storage may be unavailable; the UI still confirms submission. */
-  }
-}
-
-function Frame({
+function Photo({
   src,
   alt,
   className = "",
-  imgClassName = "",
   eager = false,
 }: {
   src: string
   alt: string
   className?: string
-  imgClassName?: string
   eager?: boolean
 }) {
+  const [loaded, setLoaded] = useState(false)
   const [failed, setFailed] = useState(false)
   return (
-    <div
-      className={`overflow-hidden rounded-2xl border border-slate-200 bg-line shadow-xl ${className}`}
-    >
+    <div className={`relative overflow-hidden bg-navy-soft ${className}`}>
+      {/* Brand gradient doubles as the loading state and as a fallback if the image is missing. */}
+      <div
+        className={`absolute inset-0 transition-opacity duration-500 ${loaded && !failed ? "opacity-0" : "opacity-100"}`}
+        style={{ background: "linear-gradient(135deg, #eef1f7 0%, #dfe5f0 50%, #cfd8e8 100%)" }}
+        aria-hidden="true"
+      />
       {failed ? (
-        <div className="h-full min-h-[220px] w-full bg-navy-soft" role="img" aria-label={alt} />
+        <div className="absolute inset-0 grid place-items-center" role="img" aria-label={alt}>
+          <CoursifyMark className="h-16 w-16 opacity-30" />
+        </div>
       ) : (
         <img
           src={src}
           alt={alt}
-          className={`h-full w-full object-cover ${imgClassName}`}
           loading={eager ? "eager" : "lazy"}
+          fetchPriority={eager ? "high" : "auto"}
           decoding="async"
+          onLoad={() => setLoaded(true)}
           onError={() => setFailed(true)}
+          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-500 ${loaded ? "opacity-100" : "opacity-0"}`}
         />
       )}
     </div>
   )
 }
 
-function CopyEmailButton({ email }: { email: string }) {
+function Eyebrow({ children, light = false }: { children: ReactNode; light?: boolean }) {
+  return (
+    <p className={`text-[13px] font-semibold tracking-[0.01em] ${light ? "text-white/60" : "text-navy"}`}>{children}</p>
+  )
+}
+
+function SectionTitle({ children, light = false }: { children: ReactNode; light?: boolean }) {
+  return (
+    <h2
+      className={`mt-3 max-w-2xl font-display text-[1.9rem] font-bold leading-[1.12] tracking-[-0.035em] sm:text-[2.4rem] ${
+        light ? "text-white" : "text-ink"
+      }`}
+    >
+      {children}
+    </h2>
+  )
+}
+
+/* ─── Contact ────────────────────────────────────────────────────────────────────────── */
+
+function CopyEmailButton() {
   const [copied, setCopied] = useState(false)
-  async function handleCopy(e: React.MouseEvent) {
-    e.preventDefault()
-    e.stopPropagation()
-    try {
-      await navigator.clipboard.writeText(email)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 2200)
-    } catch {
-      /* clipboard fallback */
-    }
-  }
   return (
     <button
       type="button"
-      onClick={handleCopy}
-      className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs font-semibold text-ink shadow-xs transition hover:border-navy hover:text-navy"
-      title="Copy email address"
+      onClick={async (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        try {
+          await navigator.clipboard.writeText(SUPPORT_EMAIL)
+          setCopied(true)
+          window.setTimeout(() => setCopied(false), 2000)
+        } catch {
+          window.location.href = `mailto:${SUPPORT_EMAIL}`
+        }
+      }}
+      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-[12px] font-semibold text-muted transition-colors hover:border-line-strong hover:text-ink"
     >
-      {copied ? <Icons.Check className="h-3.5 w-3.5 text-emerald-600" /> : <Icons.Copy className="h-3.5 w-3.5 text-muted" />}
-      <span className={copied ? "text-emerald-700 font-bold" : "text-muted"}>
-        {copied ? "Copied address" : "Copy"}
-      </span>
+      {copied ? <Icons.Check className="h-3.5 w-3.5 text-online" /> : <Icons.Copy className="h-3.5 w-3.5" />}
+      {copied ? "Copied" : "Copy address"}
     </button>
   )
 }
 
+/**
+ * There is no backend to receive form posts, so the form hands the message to the visitor's own
+ * email app, pre-filled. Nothing is claimed as "sent" until they send it there.
+ */
 function ContactForm() {
   const [name, setName] = useState("")
-  const [email, setEmail] = useState("")
+  const [school, setSchool] = useState("")
   const [message, setMessage] = useState("")
   const [error, setError] = useState<string | null>(null)
-  const [status, setStatus] = useState<"idle" | "sending" | "sent">("idle")
+  const [opened, setOpened] = useState(false)
 
-  async function handleSubmit(event: FormEvent) {
+  function handleSubmit(event: FormEvent) {
     event.preventDefault()
-    if (status === "sending") return
-    const trimmedName = name.trim()
-    const trimmedEmail = email.trim()
-    const trimmedMessage = message.trim()
-
-    if (trimmedName.length < 2) {
-      setError("Please enter your full name (at least 2 characters).")
-      return
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      setError("Please enter a valid email address.")
-      return
-    }
-    if (trimmedMessage.length < 10) {
-      setError("Please include a message of at least 10 characters.")
-      return
-    }
-
+    if (name.trim().length < 2) return setError("Please add your name.")
+    if (message.trim().length < 10) return setError("Please write a little more so we can help.")
     setError(null)
-    setStatus("sending")
-    try {
-      persistContact({
-        id: uid("msg"),
-        name: trimmedName,
-        email: trimmedEmail,
-        message: trimmedMessage,
-        createdAt: new Date().toISOString(),
-      })
-      await new Promise((resolve) => window.setTimeout(resolve, 550))
-      setStatus("sent")
-    } catch {
-      setError("Could not deliver that message. Please email directly at kabuyaentambwe03@gmail.com.")
-    } finally {
-      setStatus((current) => (current === "sending" ? "idle" : current))
-    }
+    const subject = `Coursify: message from ${name.trim()}${school.trim() ? ` (${school.trim()})` : ""}`
+    const body = `${message.trim()}\n\n${name.trim()}${school.trim() ? `\n${school.trim()}` : ""}`
+    window.location.href = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+    setOpened(true)
   }
 
-  if (status === "sent") {
-    return (
-      <div className="flex flex-col justify-center rounded-3xl border border-emerald-500/20 bg-gradient-to-b from-surface via-surface to-emerald-50/40 p-8 sm:p-10 shadow-[0_20px_50px_rgba(26,43,74,0.06)]">
-        <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 shadow-inner">
-          <Icons.Check className="h-7 w-7 stroke-[2.5]" />
-        </div>
-        <h3 className="mt-5 font-display text-2xl font-bold tracking-tight text-ink">
-          Message delivered directly
-        </h3>
-        <p className="mt-2 text-[15px] leading-relaxed text-muted">
-          Thank you, <span className="font-semibold text-ink">{name.trim()}</span>. Your note has been securely forwarded to the platform creator. A personal response will be sent to <span className="font-semibold text-ink">{email.trim()}</span>.
-        </p>
-        <div className="mt-6 rounded-xl border border-line bg-surface/80 p-4 font-mono text-xs text-muted">
-          <p className="font-semibold text-ink">Dispatch confirmed:</p>
-          <p className="mt-1 break-all">Recipient: {SUPPORT_EMAIL}</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => {
-            setName("")
-            setEmail("")
-            setMessage("")
-            setError(null)
-            setStatus("idle")
-          }}
-          className="mt-8 self-start inline-flex items-center gap-2 rounded-xl border border-line bg-surface px-5 py-2.5 text-sm font-semibold text-ink shadow-xs hover:border-navy hover:text-navy transition"
-        >
-          <span>Send another note</span>
-          <Icons.ChevronRight className="h-4 w-4" />
-        </button>
-      </div>
-    )
-  }
+  const input =
+    "h-12 w-full rounded-xl border border-line bg-canvas px-4 text-[15px] text-ink outline-none transition-shadow placeholder:text-muted/70 focus:border-navy focus:bg-surface focus:shadow-[0_0_0_4px_rgba(26,43,74,0.10)]"
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="relative rounded-3xl border border-line bg-surface/95 backdrop-blur-sm p-8 sm:p-10 shadow-[0_20px_50px_rgba(26,43,74,0.06)]"
-    >
-      <div className="flex items-center justify-between">
-        <span className="rounded-full border border-navy/15 bg-navy/5 px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-wider text-navy">
-          Direct Dispatch
-        </span>
-        <span className="font-mono text-[11px] text-muted">Personal reply guaranteed</span>
-      </div>
-      <h3 className="mt-4 font-display text-2xl font-bold tracking-tight text-ink">
-        Send a note to leadership
-      </h3>
-      <p className="mt-1 text-sm text-muted">
-        Reach platform founder Kabuya Entambwe with inquiries, curriculum proposals, or feedback.
+    <form onSubmit={handleSubmit} className="rounded-3xl border border-line bg-surface p-6 shadow-[0_24px_60px_rgba(18,20,28,0.06)] sm:p-8">
+      <h3 className="font-display text-[22px] font-bold tracking-[-0.02em] text-ink">Write to us</h3>
+      <p className="mt-1.5 text-[14.5px] leading-relaxed text-muted">
+        Questions, ideas, or bringing Coursify to your whole school. The founder reads every message.
       </p>
-
-      <div className="mt-6 space-y-4">
-        <div>
-          <label className="mb-1.5 flex items-center justify-between text-xs font-semibold text-ink">
-            <span>Your full name</span>
-            <span className="font-mono text-[10px] text-muted">Required</span>
-          </label>
-          <input
-            value={name}
-            onChange={(event) => {
-              setName(event.target.value)
-              if (error) setError(null)
-            }}
-            className="w-full rounded-xl border border-line bg-canvas/60 px-4 py-3 text-sm text-ink outline-none transition-all placeholder:text-muted/60 hover:border-line-strong focus:border-navy focus:bg-surface focus:shadow-[0_0_0_4px_rgba(26,43,74,0.08)]"
-            autoComplete="name"
-            placeholder="Dr. Katherine Johnson"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1.5 flex items-center justify-between text-xs font-semibold text-ink">
-            <span>Email address</span>
-            <span className="font-mono text-[10px] text-muted">For response</span>
-          </label>
-          <input
-            type="email"
-            value={email}
-            onChange={(event) => {
-              setEmail(event.target.value)
-              if (error) setError(null)
-            }}
-            className="w-full rounded-xl border border-line bg-canvas/60 px-4 py-3 text-sm text-ink outline-none transition-all placeholder:text-muted/60 hover:border-line-strong focus:border-navy focus:bg-surface focus:shadow-[0_0_0_4px_rgba(26,43,74,0.08)]"
-            autoComplete="email"
-            placeholder="kjohnson@institution.edu"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1.5 flex items-center justify-between text-xs font-semibold text-ink">
-            <span>Your message</span>
-            <span className="font-mono text-[10px] text-muted">Min 10 characters</span>
-          </label>
-          <textarea
-            value={message}
-            onChange={(event) => {
-              setMessage(event.target.value)
-              if (error) setError(null)
-            }}
-            rows={5}
-            className="w-full resize-none rounded-xl border border-line bg-canvas/60 px-4 py-3 text-sm text-ink outline-none transition-all placeholder:text-muted/60 hover:border-line-strong focus:border-navy focus:bg-surface focus:shadow-[0_0_0_4px_rgba(26,43,74,0.08)]"
-            placeholder="How can we assist with your institution, curriculum collaboration, or account?"
-          />
-        </div>
+      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1.5 block text-[13px] font-semibold text-ink">Your name</span>
+          <input value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" className={input} placeholder="Nomsa Dlamini" />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-[13px] font-semibold text-ink">
+            School <span className="font-normal text-muted">(optional)</span>
+          </span>
+          <input value={school} onChange={(event) => setSchool(event.target.value)} autoComplete="organization" className={input} placeholder="Hoërskool, college or district" />
+        </label>
       </div>
-
+      <label className="mt-4 block">
+        <span className="mb-1.5 block text-[13px] font-semibold text-ink">Message</span>
+        <textarea
+          value={message}
+          onChange={(event) => setMessage(event.target.value)}
+          rows={5}
+          className={`${input} h-auto resize-none py-3 leading-relaxed`}
+          placeholder="How can we help?"
+        />
+      </label>
       {error ? (
-        <div className="mt-4 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs font-medium text-rose-800">
-          <Icons.Close className="h-4 w-4 shrink-0 text-rose-600" />
-          <span>{error}</span>
-        </div>
+        <p role="alert" className="mt-4 flex items-center gap-2 rounded-xl bg-[#fbeeec] px-3.5 py-2.5 text-[13px] text-[#8a3b32]">
+          <Icons.Alert className="h-4 w-4 shrink-0" />
+          {error}
+        </p>
       ) : null}
-
+      {opened ? (
+        <p className="animate-fade-in mt-4 flex items-start gap-2 rounded-xl bg-navy-soft px-3.5 py-3 text-[13px] leading-relaxed text-ink">
+          <Icons.Mail className="mt-0.5 h-4 w-4 shrink-0 text-navy" />
+          <span>
+            Your email app should have opened with the message ready. Press send there to reach us. If nothing opened,
+            email <a href={`mailto:${SUPPORT_EMAIL}`} className="font-semibold text-navy underline-offset-2 hover:underline">{SUPPORT_EMAIL}</a> directly.
+          </span>
+        </p>
+      ) : null}
       <button
         type="submit"
-        disabled={status === "sending"}
-        className="mt-6 group relative flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-navy text-sm font-semibold text-white shadow-[0_8px_20px_rgba(26,43,74,0.22)] transition-all hover:bg-navy-hover hover:shadow-[0_12px_28px_rgba(26,43,74,0.3)] disabled:opacity-60"
+        className="group mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-navy text-[15px] font-semibold text-white transition-colors hover:bg-navy-hover"
       >
-        <Icons.Send className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-        <span>{status === "sending" ? "Delivering note to creator…" : "Send message directly"}</span>
+        Continue in your email app
+        <Icons.ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
       </button>
     </form>
   )
 }
 
-export default function Landing({
-  onSignIn,
-  onGetStarted,
-}: {
-  onSignIn: () => void
-  onGetStarted: () => void
-}) {
+/* ─── Page ───────────────────────────────────────────────────────────────────────────── */
+
+export default function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGetStarted: () => void }) {
+  const [menuOpen, setMenuOpen] = useState(false)
+
   return (
     <div className="min-h-full bg-canvas text-ink">
-      <header className="sticky top-0 z-20 border-b border-line/90 bg-canvas/90 backdrop-blur-md">
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-3 px-5 sm:h-16 sm:px-6">
-          <a href="#top" className="shrink-0">
+      <header className="sticky top-0 z-30 border-b border-line/80 bg-canvas/85 backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-5 sm:px-6">
+          <a href="#top" className="shrink-0" aria-label="Coursify home">
             <Logo />
           </a>
-          <nav className="hidden items-center gap-8 text-[13px] font-medium text-muted lg:flex">
-            <a href="#product" className="transition-colors hover:text-ink">
-              Product
-            </a>
-            <a href="#classrooms" className="transition-colors hover:text-ink">
-              Practice
-            </a>
-            <a href="#meetups" className="transition-colors hover:text-ink">
-              Meetups
-            </a>
-            <a href="#mission" className="transition-colors hover:text-ink">
-              Mission
-            </a>
-            <a href="#contact" className="transition-colors hover:text-ink">
-              Contact
-            </a>
+          <nav className="hidden items-center gap-7 text-[14px] font-medium text-muted lg:flex">
+            {nav.map((item) => (
+              <a key={item.href} href={item.href} className="transition-colors hover:text-ink">
+                {item.label}
+              </a>
+            ))}
           </nav>
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            <button
-              type="button"
-              onClick={onSignIn}
-              className="min-h-10 rounded-lg px-3 py-2 text-[13px] font-medium text-ink hover:bg-black/[0.04]"
-            >
+          <div className="flex items-center gap-1.5">
+            <button type="button" onClick={onSignIn} className="hidden h-10 rounded-xl px-3.5 text-[14px] font-semibold text-ink transition-colors hover:bg-black/[0.04] sm:block">
               Sign in
+            </button>
+            <button type="button" onClick={onGetStarted} className="h-10 rounded-xl bg-navy px-4 text-[14px] font-semibold text-white transition-colors hover:bg-navy-hover">
+              Join Coursify
             </button>
             <button
               type="button"
-              onClick={onGetStarted}
-              className="min-h-10 rounded-lg bg-navy px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-navy-hover sm:px-4"
+              onClick={() => setMenuOpen((value) => !value)}
+              className="grid h-10 w-10 place-items-center rounded-xl text-ink hover:bg-black/[0.04] lg:hidden"
+              aria-label={menuOpen ? "Close menu" : "Open menu"}
+              aria-expanded={menuOpen}
             >
-              Get started
+              {menuOpen ? <Icons.Close className="h-5 w-5" /> : <Icons.Menu className="h-5 w-5" />}
             </button>
           </div>
         </div>
+        {menuOpen ? (
+          <nav className="animate-fade-in border-t border-line bg-canvas px-5 pb-4 pt-2 lg:hidden">
+            {nav.map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                onClick={() => setMenuOpen(false)}
+                className="flex h-12 items-center border-b border-line/70 text-[15px] font-medium text-ink last:border-0"
+              >
+                {item.label}
+              </a>
+            ))}
+            <button type="button" onClick={onSignIn} className="mt-3 h-11 w-full rounded-xl border border-line text-[14px] font-semibold text-ink sm:hidden">
+              Sign in
+            </button>
+          </nav>
+        ) : null}
       </header>
 
       <main id="top">
-        <section className="mx-auto grid max-w-6xl items-center gap-12 px-5 pb-20 pt-12 sm:px-6 sm:pb-24 sm:pt-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.92fr)] lg:gap-16 lg:pb-28 lg:pt-20">
-          <div>
-            <p className="text-[13px] font-medium text-navy">For high school and university educators</p>
-            <h1 className="mt-4 max-w-xl font-display text-[2.15rem] font-bold leading-[1.12] tracking-[-0.04em] text-ink sm:text-[2.75rem] lg:text-[3.35rem] lg:leading-[1.08]">
-              No teacher should start from a blank page.
-            </h1>
-            <p className="mt-5 max-w-md text-[16px] leading-7 text-muted sm:text-[17px]">
-              Coursify is a professional workspace for curriculum. Publish lessons, keep a verified
-              profile, and collaborate with colleagues without the noise of a social network.
-            </p>
-            <div className="mt-8 flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={onGetStarted}
-                className="rounded-lg bg-navy px-5 py-2.5 text-sm font-semibold text-white hover:bg-navy-hover"
-              >
-                Create educator account
-              </button>
-              <button
-                type="button"
-                onClick={onSignIn}
-                className="rounded-lg border border-line bg-surface px-5 py-2.5 text-sm font-medium text-ink hover:border-line-strong"
-              >
-                Sign in
-              </button>
-            </div>
-            <p className="mt-5 text-[13px] leading-6 text-muted">
-              Join with any valid email address.
-            </p>
-          </div>
-
-          <Frame
-            src={photos.hero}
-            alt="Educators and learners collaborating in a library"
-            className="aspect-[4/5] w-full sm:aspect-[5/6] lg:aspect-[4/5]"
-            eager
-          />
-        </section>
-
-        <section id="product" className="scroll-mt-20 border-t border-line">
-          <div className="mx-auto max-w-6xl px-5 py-20 sm:px-6 lg:py-24">
-            <p className="text-[13px] font-medium text-navy">Product</p>
-            <h2 className="mt-3 max-w-xl font-display text-[1.75rem] font-bold tracking-[-0.03em] text-ink sm:text-[2rem]">
-              Everything a teaching practice needs, without the extra surface area.
-            </h2>
-            <div className="mt-12 grid gap-10 sm:grid-cols-3 sm:gap-8 lg:gap-12">
-              {features.map((feature) => {
-                const Icon = Icons[feature.icon]
-                return (
-                  <article key={feature.title}>
-                    <span className="grid h-9 w-9 place-items-center rounded-lg bg-navy-soft text-navy">
-                      <Icon className="h-4 w-4" />
-                    </span>
-                    <h3 className="mt-4 font-display text-[17px] font-semibold tracking-[-0.02em] text-ink">
-                      {feature.title}
-                    </h3>
-                    <p className="mt-2 text-[14px] leading-7 text-muted">{feature.body}</p>
-                  </article>
-                )
-              })}
-            </div>
-          </div>
-        </section>
-
-        <section id="classrooms" className="scroll-mt-20 border-t border-line bg-surface">
-          <div className="mx-auto max-w-6xl px-5 py-20 sm:px-6 lg:py-24">
-            <div className="max-w-2xl">
-              <p className="text-[13px] font-medium text-navy">Inside the practice</p>
-              <h2 className="mt-3 font-display text-[1.75rem] font-bold tracking-[-0.03em] text-ink sm:text-[2rem]">
-                Built around the rooms where teaching actually happens.
-              </h2>
-              <p className="mt-4 max-w-xl text-[16px] leading-7 text-muted">
-                From a laptop on a classroom desk to a faculty workshop, Coursify is the professional
-                home for educators who already share their best work with each other.
-              </p>
-            </div>
-            <div className="mt-12 grid gap-8 md:grid-cols-2 md:gap-10">
-              {classrooms.map((item) => (
-                <figure key={item.title} className="min-w-0">
-                  <Frame src={item.src} alt={item.alt} className="aspect-[4/3]" />
-                  <figcaption className="mt-5">
-                    <h3 className="font-display text-[17px] font-semibold tracking-[-0.02em] text-ink">
-                      {item.title}
-                    </h3>
-                    <p className="mt-2 text-[14px] leading-7 text-muted">{item.body}</p>
-                  </figcaption>
-                </figure>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section id="meetups" className="scroll-mt-20 border-t border-line">
-          <div className="mx-auto max-w-6xl px-5 py-20 sm:px-6 lg:py-24">
-            <div className="max-w-2xl">
-              <p className="text-[13px] font-medium text-navy">Meetups</p>
-              <h2 className="mt-3 font-display text-[1.75rem] font-bold tracking-[-0.03em] text-ink sm:text-[2rem]">
-                Gather off the feed, then walk into class ready.
-              </h2>
-              <p className="mt-4 max-w-xl text-[16px] leading-7 text-muted">
-                Host in-person sessions with a map, or share a conference link for online faculty time.
-                Colleagues RSVP, see who is going, and join when it starts.
-              </p>
-            </div>
-            <div className="mt-12 grid gap-8 border-t border-line pt-10 sm:grid-cols-3 sm:gap-10">
-              {meetupPoints.map((item) => (
-                <div key={item.title}>
-                  <p className="font-display text-[16px] font-semibold tracking-[-0.02em] text-ink">
-                    {item.title}
-                  </p>
-                  <p className="mt-2 text-[14px] leading-7 text-muted">{item.body}</p>
-                </div>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={onGetStarted}
-              className="mt-10 rounded-lg bg-navy px-5 py-2.5 text-sm font-semibold text-white hover:bg-navy-hover"
-            >
-              Join as an educator
-            </button>
-          </div>
-        </section>
-
-        <section id="mission" className="scroll-mt-20 bg-navy text-white">
-          <div className="mx-auto grid max-w-6xl items-stretch lg:grid-cols-2">
-            <div className="relative min-h-[280px] sm:min-h-[360px] lg:min-h-[520px]">
-              <img
-                src={photos.mission}
-                alt="Educator in a classroom with students raising their hands"
-                className="absolute inset-0 h-full w-full object-cover"
-                loading="lazy"
-                decoding="async"
-              />
-            </div>
-            <div className="flex flex-col justify-center px-5 py-16 sm:px-10 sm:py-20 lg:px-14 lg:py-24">
-              <p className="text-[13px] font-medium text-white/65">Mission</p>
-              <h2 className="mt-3 font-display text-[1.75rem] font-bold tracking-[-0.03em] sm:text-[2rem] sm:leading-[1.15]">
-                Teachers should spend their time teaching, not rebuilding materials from scratch.
-              </h2>
-              <div className="mt-6 space-y-4 text-[15px] leading-7 text-white/75">
-                <p>
-                  Every term, educators lose hours recreating lessons that already exist in a drawer,
-                  a shared drive, or a colleague&apos;s inbox. Coursify closes that gap: a professional
-                  home for curriculum that can be published, organized, and reused.
-                </p>
-                <p>
-                  Keep a verified profile with your school, subjects, and credentials. Share collections
-                  by grade. Give fellow educators a quiet place to collaborate, so the work of teaching
-                  stays on teaching.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section id="contact" className="relative scroll-mt-20 overflow-hidden border-t border-line bg-canvas py-20 sm:py-28 lg:py-32">
-          {/* Subtle top ambient radial glow */}
+        {/* ── Hero ── */}
+        <section className="relative overflow-hidden">
           <div
-            className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-96 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(26,43,74,0.08),transparent)]"
+            className="pointer-events-none absolute inset-x-0 top-0 h-[520px] bg-[radial-gradient(60%_60%_at_20%_0%,rgba(26,43,74,0.08),transparent)]"
             aria-hidden="true"
           />
-
-          <div className="mx-auto max-w-6xl px-5 sm:px-6">
-            <div className="max-w-2xl">
-              <div className="inline-flex items-center gap-2 rounded-full border border-navy/15 bg-navy/5 px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-wider text-navy shadow-2xs">
-                <Icons.Mail className="h-3 w-3 text-navy" />
-                Direct Creator Access
-              </div>
-              <h2 className="mt-4 font-display text-3xl font-bold tracking-tight text-ink sm:text-4xl lg:text-[2.65rem] lg:leading-tight">
-                Connect with the platform creator.
-              </h2>
-              <p className="mt-4 text-[16px] leading-relaxed text-muted sm:text-[17px]">
-                Whether you’re exploring institutional adoption, curriculum collaboration, or have feedback about Coursify, reach platform creator Kabuya Entambwe directly.
+          <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-5 pb-20 pt-12 sm:px-6 sm:pt-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.02fr)] lg:gap-14 lg:pb-28 lg:pt-20">
+            <div className="animate-rise">
+              <span className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-[12.5px] font-semibold text-navy">
+                <span className="h-1.5 w-1.5 rounded-full bg-online" />
+                Made for South African teachers
+              </span>
+              <h1 className="mt-5 font-display text-[2.6rem] font-bold leading-[1.02] tracking-[-0.045em] text-ink sm:text-[3.4rem] lg:text-[3.9rem]">
+                Your next lesson is probably already written.
+              </h1>
+              <p className="mt-6 max-w-[34rem] text-[17px] leading-[1.65] text-muted sm:text-[18px]">
+                Coursify is where teachers share the CAPS-aligned worksheets, slide decks and lesson plans they already use,
+                and where the colleague who made them is one message away. Spend your evenings on your learners, not on
+                rebuilding material that exists.
               </p>
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+                <button
+                  type="button"
+                  onClick={onGetStarted}
+                  className="group inline-flex h-12 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-navy px-6 text-[15px] font-semibold text-white shadow-[0_10px_24px_rgba(26,43,74,0.22)] transition-all hover:bg-navy-hover hover:shadow-[0_14px_30px_rgba(26,43,74,0.28)]"
+                >
+                  Join as a teacher
+                  <Icons.ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={onSignIn}
+                  className="inline-flex h-12 items-center justify-center whitespace-nowrap rounded-xl border border-line bg-surface px-6 text-[15px] font-semibold text-ink transition-colors hover:border-line-strong"
+                >
+                  Sign in
+                </button>
+              </div>
+              <p className="mt-5 text-[13.5px] text-muted">Takes about two minutes. Works on your phone and your laptop.</p>
             </div>
 
-            <div className="mt-12 grid gap-8 lg:grid-cols-12 lg:gap-12 items-start">
-              {/* Left column: Direct contact cards & Trust badge */}
-              <div className="flex flex-col gap-5 lg:col-span-5">
-                {/* Official Gmail / Email Contact Card */}
-                <a
-                  href={`mailto:${SUPPORT_EMAIL}`}
-                  className="group relative block overflow-hidden rounded-2xl border border-line bg-surface p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-navy/40 hover:shadow-xl hover:shadow-navy/5"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-center gap-3.5">
-                      <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-[#fceded]/80 text-navy shadow-2xs transition-transform duration-300 group-hover:scale-105">
-                        <Icons.Gmail className="h-6 w-6" />
-                      </span>
-                      <div>
-                        <span className="inline-flex items-center rounded-md bg-navy/10 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-navy">
-                          Administrator Email
-                        </span>
-                        <p className="mt-1 text-xs font-medium text-muted">Official Creator Direct Channel</p>
-                      </div>
-                    </div>
-                    <span className="rounded-full p-1.5 text-muted transition-colors group-hover:bg-navy/5 group-hover:text-navy">
-                      <Icons.ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                    </span>
-                  </div>
-
-                  <div className="mt-4">
-                    <p className="font-mono text-sm font-bold text-ink sm:text-[15px] group-hover:text-navy transition-colors break-all">
-                      {SUPPORT_EMAIL}
-                    </p>
-                    <p className="mt-1 text-xs text-muted">
-                      Click to compose email. Messages are personally reviewed within 24 hours.
-                    </p>
-                  </div>
-
-                  <div className="mt-5 flex items-center justify-between border-t border-line/60 pt-4">
-                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-navy">
-                      <span>Send email directly</span>
-                      <Icons.ChevronRight className="h-3 w-3" />
-                    </span>
-                    <CopyEmailButton email={SUPPORT_EMAIL} />
-                  </div>
-                </a>
-
-                {/* Official Instagram Profile Card */}
-                <a
-                  href={INSTAGRAM_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="group relative block overflow-hidden rounded-2xl border border-line bg-surface p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-pink-500/40 hover:shadow-xl hover:shadow-pink-500/5"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-center gap-3.5">
-                      <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-gradient-to-tr from-[#fd5949]/10 via-[#d6249f]/10 to-[#285aeb]/10 p-2 shadow-2xs transition-transform duration-300 group-hover:scale-105">
-                        <Icons.Instagram className="h-7 w-7" />
-                      </span>
-                      <div>
-                        <span className="inline-flex items-center rounded-md bg-pink-50 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-[#c13584]">
-                          Creator Socials
-                        </span>
-                        <p className="mt-1 text-xs font-medium text-muted">Official Instagram & Community</p>
-                      </div>
-                    </div>
-                    <span className="rounded-full p-1.5 text-muted transition-colors group-hover:bg-pink-50 group-hover:text-[#c13584]">
-                      <Icons.ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                    </span>
-                  </div>
-
-                  <div className="mt-4">
-                    <p className="font-mono text-sm font-bold text-ink sm:text-[15px] group-hover:text-[#c13584] transition-colors">
-                      {INSTAGRAM_HANDLE}
-                    </p>
-                    <p className="mt-1 text-xs text-muted">
-                      Follow our public roadmap, curriculum drops, and behind-the-scenes engineering.
-                    </p>
-                  </div>
-
-                  <div className="mt-5 flex items-center justify-between border-t border-line/60 pt-4">
-                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#c13584]">
-                      <span>Visit Instagram profile</span>
-                      <Icons.ChevronRight className="h-3 w-3" />
-                    </span>
-                    <span className="text-[11px] font-medium text-muted">Opens in new tab ↗</span>
-                  </div>
-                </a>
-
-                {/* Direct Founder Review Guarantee */}
-                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0c1427] via-[#111c35] to-[#1a2b4a] p-6 text-white shadow-lg border border-slate-700/60">
-                  <div className="pointer-events-none absolute -right-6 -bottom-6 h-32 w-32 rounded-full bg-sky-500/10 blur-2xl" />
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex h-2 w-2 rounded-full bg-sky-400" />
-                    <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-sky-300">
-                      Founder Review Guarantee
-                    </span>
-                  </div>
-                  <h4 className="mt-2 font-display text-base font-bold text-white">
-                    Direct Founder Oversight
-                  </h4>
-                  <p className="mt-1.5 text-xs leading-relaxed text-slate-300">
-                    Every message, curriculum proposal, and institutional partnership inquiry is personally received and reviewed by platform creator Kabuya Entambwe.
-                  </p>
-                  <div className="mt-4 flex items-center justify-between border-t border-slate-700/70 pt-3 text-[11px] text-slate-400">
-                    <span>Kabuya Entambwe</span>
-                    <span className="font-mono text-sky-400 font-medium">Administrator & Creator</span>
+            <div className="animate-rise relative [animation-delay:120ms]">
+              <Photo
+                src={photos.hero}
+                alt="A science teacher guides learners through an electric circuits practical in a South African classroom"
+                className="aspect-[6/5] rounded-[28px] shadow-[0_30px_80px_rgba(18,20,28,0.18)]"
+                eager
+              />
+              {/* Illustrative product moments layered over the photo. */}
+              <div className="animate-rise absolute -bottom-6 left-4 w-[min(310px,82%)] rounded-2xl border border-line bg-surface/95 p-3.5 shadow-[0_16px_40px_rgba(18,20,28,0.16)] backdrop-blur [animation-delay:420ms] sm:-left-8">
+                <div className="flex items-start gap-3">
+                  <span className="relative grid h-11 w-10 shrink-0 place-items-center rounded-lg bg-navy-soft text-navy">
+                    <Icons.File className="h-5 w-5" />
+                    <span className="absolute -bottom-1 rounded bg-navy px-1 font-mono text-[8px] font-bold leading-[13px] text-white">PDF</span>
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-[13.5px] font-semibold text-ink">Electric circuits practical</p>
+                    <p className="truncate text-[12px] text-muted">Physical Sciences · Grade 10</p>
                   </div>
                 </div>
+                <div className="mt-3 flex items-center justify-between border-t border-line pt-2.5 text-[12px]">
+                  <span className="inline-flex items-center gap-1.5 text-muted">
+                    <Icons.Download className="h-3.5 w-3.5" />
+                    Download
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 font-semibold text-navy">
+                    <Icons.Bookmark className="h-3.5 w-3.5" />
+                    Saved
+                  </span>
+                </div>
               </div>
+              <div className="animate-rise absolute -top-5 right-4 max-w-[240px] rounded-2xl rounded-br-md bg-navy px-3.5 py-2.5 text-[13px] leading-snug text-white shadow-[0_16px_40px_rgba(18,20,28,0.22)] [animation-delay:640ms] sm:-right-6">
+                Using your memo with my 10B class tomorrow. Thank you!
+                <span className="mt-1 flex items-center justify-end gap-1 text-[10.5px] text-white/60">
+                  18:42 <Icons.DoubleCheck className="h-3.5 w-3.5 text-[#9cd1ff]" />
+                </span>
+              </div>
+            </div>
+          </div>
 
-              {/* Right column: Interactive contact form */}
-              <div className="lg:col-span-7">
-                <ContactForm />
+          <div className="border-y border-line bg-surface/70">
+            <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-6 gap-y-2 px-5 py-4 text-[13px] text-muted sm:justify-between sm:px-6">
+              <span className="font-semibold text-ink">Share it in the format you made it</span>
+              <span className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1">
+                {formats.map((format) => (
+                  <span key={format} className="inline-flex items-center gap-1.5">
+                    <span className="h-1 w-1 rounded-full bg-line-strong" />
+                    {format}
+                  </span>
+                ))}
+              </span>
+            </div>
+          </div>
+        </section>
+
+        {/* ── Product ── */}
+        <section id="product" className="scroll-mt-20">
+          <div className="mx-auto max-w-6xl px-5 py-20 sm:px-6 lg:py-28">
+            <Reveal>
+              <Eyebrow>Product</Eyebrow>
+              <SectionTitle>Everything you need to stop planning alone.</SectionTitle>
+              <p className="mt-4 max-w-xl text-[16.5px] leading-[1.7] text-muted">
+                Coursify isn't another feed to keep up with. It's a working space for the parts of teaching that happen
+                outside the classroom.
+              </p>
+            </Reveal>
+            <div className="mt-12 grid gap-4 sm:grid-cols-2">
+              {features.map((feature, index) => (
+                <Reveal key={feature.title} delay={index * 80}>
+                  <article className="group h-full rounded-3xl border border-line bg-surface p-6 transition-shadow hover:shadow-[0_16px_40px_rgba(18,20,28,0.06)] sm:p-7">
+                    <span className="grid h-11 w-11 place-items-center rounded-xl bg-navy-soft text-navy transition-colors group-hover:bg-navy group-hover:text-white">
+                      <feature.icon className="h-5 w-5" />
+                    </span>
+                    <h3 className="mt-5 font-display text-[19px] font-bold leading-snug tracking-[-0.02em] text-ink">{feature.title}</h3>
+                    <p className="mt-2.5 text-[15px] leading-[1.7] text-muted">{feature.body}</p>
+                  </article>
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ── How it works ── */}
+        <section id="how-it-works" className="scroll-mt-20 border-y border-line bg-surface">
+          <div className="mx-auto grid max-w-6xl items-center gap-12 px-5 py-20 sm:px-6 lg:grid-cols-2 lg:gap-16 lg:py-28">
+            <Reveal>
+              <Photo
+                src={photos.planning}
+                alt="Teachers working through lesson materials together at a table"
+                className="aspect-[4/3] rounded-[28px]"
+              />
+            </Reveal>
+            <div>
+              <Reveal>
+                <Eyebrow>How it works</Eyebrow>
+                <SectionTitle>Built for the Sunday-evening lesson plan.</SectionTitle>
+              </Reveal>
+              <ol className="mt-10 space-y-7">
+                {steps.map((step, index) => (
+                  <Reveal key={step.title} delay={index * 90}>
+                    <li className="flex gap-5">
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-line bg-canvas font-display text-[15px] font-bold text-navy">
+                        {index + 1}
+                      </span>
+                      <div>
+                        <h3 className="font-display text-[18px] font-bold tracking-[-0.02em] text-ink">{step.title}</h3>
+                        <p className="mt-1.5 text-[15px] leading-[1.7] text-muted">{step.body}</p>
+                      </div>
+                    </li>
+                  </Reveal>
+                ))}
+              </ol>
+            </div>
+          </div>
+        </section>
+
+        {/* ── Meetups ── */}
+        <section id="meetups" className="scroll-mt-20">
+          <div className="mx-auto max-w-6xl px-5 py-20 sm:px-6 lg:py-28">
+            <div className="grid items-end gap-8 lg:grid-cols-[minmax(0,1fr)_auto]">
+              <Reveal>
+                <Eyebrow>Meetups</Eyebrow>
+                <SectionTitle>The best professional development is often the teacher down the road.</SectionTitle>
+              </Reveal>
+              <Reveal delay={100}>
+                <button
+                  type="button"
+                  onClick={onGetStarted}
+                  className="group inline-flex h-11 items-center gap-2 rounded-xl border border-line bg-surface px-5 text-[14px] font-semibold text-ink transition-colors hover:border-line-strong"
+                >
+                  Host your first meetup
+                  <Icons.ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                </button>
+              </Reveal>
+            </div>
+
+            <div className="mt-12 grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+              <Reveal>
+                <Photo
+                  src={photos.workshop}
+                  alt="Teachers taking part in a training workshop"
+                  className="aspect-[16/10] h-full rounded-[28px] lg:aspect-auto lg:min-h-[420px]"
+                />
+              </Reveal>
+              <div className="grid gap-4">
+                <Reveal delay={80}>
+                  <div className="h-full rounded-3xl border border-line bg-surface p-6">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-navy-soft px-2.5 py-1 text-[12px] font-semibold text-navy">
+                      <Icons.Pin className="h-3.5 w-3.5" />
+                      In person
+                    </span>
+                    <h3 className="mt-4 font-display text-[18px] font-bold tracking-[-0.02em] text-ink">A venue, a map, a headcount</h3>
+                    <p className="mt-2 text-[15px] leading-[1.7] text-muted">
+                      Add the school or address and colleagues see it on a map. You'll know who's coming before you put the kettle on.
+                    </p>
+                  </div>
+                </Reveal>
+                <Reveal delay={160}>
+                  <div className="h-full rounded-3xl border border-line bg-surface p-6">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#eef3f6] px-2.5 py-1 text-[12px] font-semibold text-[#3a5a6b]">
+                      <Icons.Video className="h-3.5 w-3.5" />
+                      Online
+                    </span>
+                    <h3 className="mt-4 font-display text-[18px] font-bold tracking-[-0.02em] text-ink">One link, only for people who RSVP</h3>
+                    <p className="mt-2 text-[15px] leading-[1.7] text-muted">
+                      Paste a Google Meet, Zoom or Teams link. It's shown to colleagues who said they're coming, with a join button when it's time.
+                    </p>
+                  </div>
+                </Reveal>
               </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── Mission ── */}
+        <section id="mission" className="scroll-mt-20 bg-navy text-white">
+          <div className="mx-auto grid max-w-6xl lg:grid-cols-2">
+            <div className="relative min-h-[300px] sm:min-h-[400px] lg:min-h-[600px]">
+              <div className="absolute inset-0">
+                <Photo src={photos.mission} alt="A teacher leads an energetic early-grade reading lesson" className="h-full w-full" />
+              </div>
+              <div className="absolute inset-0 bg-gradient-to-t from-navy/40 to-transparent lg:bg-gradient-to-r lg:from-transparent lg:to-navy/30" aria-hidden="true" />
+            </div>
+            <div className="flex flex-col justify-center px-5 py-16 sm:px-10 sm:py-20 lg:px-16 lg:py-24">
+              <Reveal>
+                <Eyebrow light>Why Coursify</Eyebrow>
+                <SectionTitle light>Good teaching material should travel as far as the teachers who need it.</SectionTitle>
+                <div className="mt-7 space-y-5 text-[16px] leading-[1.75] text-white/75">
+                  <p>
+                    Right now, a brilliant Grade 12 revision pack can sit in one teacher's Google Drive while a colleague two
+                    schools away builds the same thing from scratch. That's hours taken from marking, from learners, and from
+                    rest.
+                  </p>
+                  <p>
+                    Coursify exists to close that gap. We give South African teachers one professional place to share what
+                    works, find what they need, and know the people behind it. It's built by someone who cares about teachers,
+                    not by an ad network.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onGetStarted}
+                  className="group mt-9 inline-flex h-12 items-center gap-2 rounded-xl bg-white px-6 text-[15px] font-semibold text-navy transition-colors hover:bg-navy-soft"
+                >
+                  Join the community
+                  <Icons.ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                </button>
+              </Reveal>
+            </div>
+          </div>
+        </section>
+
+        {/* ── Contact ── */}
+        <section id="contact" className="scroll-mt-20">
+          <div className="mx-auto max-w-6xl px-5 py-20 sm:px-6 lg:py-28">
+            <div className="grid gap-10 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-14">
+              <Reveal>
+                <Eyebrow>Contact</Eyebrow>
+                <SectionTitle>Talk to a person, not a ticket queue.</SectionTitle>
+                <p className="mt-4 max-w-md text-[16.5px] leading-[1.7] text-muted">
+                  Coursify is small and independent, so your feedback shapes what we build next. Tell us what would save
+                  you time.
+                </p>
+
+                <div className="mt-8 space-y-3">
+                  <a
+                    href={`mailto:${SUPPORT_EMAIL}`}
+                    className="group flex items-center gap-4 rounded-2xl border border-line bg-surface p-4 transition-all hover:-translate-y-0.5 hover:border-line-strong hover:shadow-[0_12px_30px_rgba(18,20,28,0.06)]"
+                  >
+                    <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-navy-soft text-navy">
+                      <Icons.Gmail className="h-5 w-5" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[13px] text-muted">Email</span>
+                      <span className="block truncate text-[15px] font-semibold text-ink">{SUPPORT_EMAIL}</span>
+                    </span>
+                    <CopyEmailButton />
+                  </a>
+                  <a
+                    href={INSTAGRAM_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group flex items-center gap-4 rounded-2xl border border-line bg-surface p-4 transition-all hover:-translate-y-0.5 hover:border-line-strong hover:shadow-[0_12px_30px_rgba(18,20,28,0.06)]"
+                  >
+                    <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-navy-soft text-navy">
+                      <Icons.Instagram className="h-5 w-5" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[13px] text-muted">Instagram</span>
+                      <span className="block truncate text-[15px] font-semibold text-ink">{INSTAGRAM_HANDLE}</span>
+                    </span>
+                    <Icons.ArrowUpRight className="h-5 w-5 shrink-0 text-muted transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-ink" />
+                  </a>
+                </div>
+              </Reveal>
+              <Reveal delay={100}>
+                <ContactForm />
+              </Reveal>
             </div>
           </div>
         </section>
       </main>
 
-      {/* Multi-Column SaaS Footer */}
-      <footer className="border-t border-slate-800 bg-[#0a0f1d] text-slate-400">
-        <div className="mx-auto max-w-6xl px-5 pt-16 pb-12 sm:px-6 lg:pt-20">
-          <div className="grid grid-cols-1 gap-10 sm:grid-cols-2 lg:grid-cols-12 lg:gap-8">
-            {/* Column 1: Brand & Mission */}
-            <div className="flex flex-col justify-between lg:col-span-4">
-              <div>
-                <Logo light />
-                <p className="mt-4 max-w-sm text-sm leading-relaxed text-slate-400">
-                  The professional workspace for modern educators. Built for rigorous lesson design,
-                  active classroom practice, and peer curriculum collaboration.
-                </p>
-                <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/90 px-3 py-1 text-xs text-slate-300">
-                  <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-                  <span>Platform Operational</span>
-                </div>
-              </div>
-              <p className="mt-8 text-xs text-slate-500">
-                © {new Date().getFullYear()} Coursify Platform. Built with integrity for teachers and institutions.
+      <footer className="bg-[#0d1628] text-white/60">
+        <div className="mx-auto max-w-6xl px-5 pb-10 pt-16 sm:px-6">
+          <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_repeat(2,minmax(0,1fr))]">
+            <div>
+              <Logo light />
+              <p className="mt-4 max-w-xs text-[14.5px] leading-relaxed">
+                Where South African teachers share their best material and find the colleagues behind it.
               </p>
+              <button
+                type="button"
+                onClick={onGetStarted}
+                className="mt-6 inline-flex h-11 items-center gap-2 rounded-xl bg-white px-5 text-[14px] font-semibold text-navy transition-colors hover:bg-navy-soft"
+              >
+                Join Coursify
+              </button>
             </div>
-
-            {/* Column 2: Quick Links */}
-            <div className="lg:col-span-2">
-              <h3 className="font-mono text-xs font-bold uppercase tracking-wider text-white">
-                Platform
-              </h3>
-              <ul className="mt-4 space-y-2.5 text-sm">
+            <div>
+              <h3 className="text-[13px] font-semibold text-white">Explore</h3>
+              <ul className="mt-4 space-y-2.5 text-[14px]">
+                {nav.map((item) => (
+                  <li key={item.href}>
+                    <a href={item.href} className="transition-colors hover:text-white">
+                      {item.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <h3 className="text-[13px] font-semibold text-white">Get in touch</h3>
+              <ul className="mt-4 space-y-2.5 text-[14px]">
                 <li>
-                  <a href="#product" className="transition-colors hover:text-white">
-                    Product
+                  <a href={`mailto:${SUPPORT_EMAIL}`} className="inline-flex items-center gap-2 transition-colors hover:text-white">
+                    <Icons.Mail className="h-4 w-4" />
+                    Email us
                   </a>
                 </li>
                 <li>
-                  <a href="#classrooms" className="transition-colors hover:text-white">
-                    Practice
+                  <a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 transition-colors hover:text-white">
+                    <Icons.Instagram className="h-4 w-4" />
+                    {INSTAGRAM_HANDLE}
                   </a>
                 </li>
                 <li>
-                  <a href="#meetups" className="transition-colors hover:text-white">
-                    Meetups
-                  </a>
-                </li>
-                <li>
-                  <a href="#mission" className="transition-colors hover:text-white">
-                    Mission
-                  </a>
-                </li>
-                <li>
-                  <a href="#contact" className="transition-colors hover:text-white">
-                    Contact
-                  </a>
+                  <button type="button" onClick={onSignIn} className="inline-flex items-center gap-2 transition-colors hover:text-white">
+                    <Icons.ArrowRight className="h-4 w-4" />
+                    Sign in
+                  </button>
                 </li>
               </ul>
             </div>
-
-            {/* Column 3: Direct Contact Shortcuts */}
-            <div className="lg:col-span-3">
-              <h3 className="font-mono text-xs font-bold uppercase tracking-wider text-white">
-                Direct Contact
-              </h3>
-              <p className="mt-4 text-xs text-slate-400">
-                Connect directly with creator and administrator Kabuya Entambwe:
-              </p>
-              <div className="mt-3.5 space-y-2.5">
-                <a
-                  href={`mailto:${SUPPORT_EMAIL}`}
-                  className="group flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 text-xs text-slate-300 transition-all hover:border-slate-700 hover:bg-slate-800/80 hover:text-white"
-                  title="Send email to administrator"
-                >
-                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[#fceded]/10 text-rose-400 group-hover:scale-105 transition-transform">
-                    <Icons.Gmail className="h-4 w-4" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-mono text-[11px] font-semibold text-slate-200 group-hover:text-white">
-                      {SUPPORT_EMAIL}
-                    </p>
-                    <p className="text-[10px] text-slate-500">Official Creator Email</p>
-                  </div>
-                </a>
-
-                <a
-                  href={INSTAGRAM_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="group flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 text-xs text-slate-300 transition-all hover:border-slate-700 hover:bg-slate-800/80 hover:text-white"
-                  title="Visit creator Instagram"
-                >
-                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-pink-500/10 text-pink-400 group-hover:scale-105 transition-transform">
-                    <Icons.Instagram className="h-4 w-4" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-mono text-[11px] font-semibold text-slate-200 group-hover:text-white">
-                      {INSTAGRAM_HANDLE}
-                    </p>
-                    <p className="text-[10px] text-slate-500">Official Community ↗</p>
-                  </div>
-                </a>
-              </div>
-            </div>
-
-            {/* Column 4: Legal & Security Note */}
-            <div className="lg:col-span-3">
-              <h3 className="font-mono text-xs font-bold uppercase tracking-wider text-white">
-                Institutional Trust
-              </h3>
-              <p className="mt-4 text-xs leading-relaxed text-slate-400">
-                Built securely for educators and institutions. Coursify incorporates role-based access control, encrypted document attachments up to 50MB, and verified peer communities.
-              </p>
-              <div className="mt-4 rounded-xl border border-slate-800/80 bg-slate-900/40 p-3 text-[11px] text-slate-400">
-                <div className="flex items-center gap-2 text-slate-300 font-semibold">
-                  <Icons.Shield className="h-3.5 w-3.5 text-sky-400" />
-                  <span>Privacy & Security By Design</span>
-                </div>
-                <p className="mt-1 text-slate-500">
-                  Strict educator data sovereignty and institutional confidentiality are enforced.
-                </p>
-              </div>
-              <div className="mt-3 text-[11px] text-slate-500">
-                <span>Platform Administrator: </span>
-                <span className="text-slate-400 font-medium">Kabuya Entambwe</span>
-              </div>
-            </div>
           </div>
-
-          {/* Bottom sub-footer bar */}
-          <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-slate-800/80 pt-8 sm:flex-row text-xs text-slate-500">
-            <p>© {new Date().getFullYear()} Coursify. All rights reserved.</p>
-            <div className="flex items-center gap-6 text-slate-400">
-              <a href="#contact" className="hover:text-white transition-colors">
-                Support & Contact
-              </a>
-              <span className="text-slate-700">•</span>
-              <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:text-white transition-colors">
-                Security Disclosure
-              </a>
-              <span className="text-slate-700">•</span>
-              <a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">
-                Community Updates
-              </a>
-            </div>
+          <div className="mt-14 flex flex-col gap-2 border-t border-white/10 pt-6 text-[12.5px] text-white/40 sm:flex-row sm:items-center sm:justify-between">
+            <p>© {new Date().getFullYear()} Coursify. Built for South African classrooms.</p>
+            <p>Photography courtesy of USAID, public domain.</p>
           </div>
         </div>
       </footer>

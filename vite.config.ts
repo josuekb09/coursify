@@ -15,6 +15,19 @@ export default defineConfig(({ mode }) => {
     build: {
       sourcemap: emitSourcemaps ? 'inline' : false,
       minify: !emitSourcemaps,
+      rolldownOptions: {
+        output: {
+          // Vendor code changes far less often than app code, so separate chunks stay cached
+          // across deploys (hashed assets are served with a 1-year immutable cache).
+          advancedChunks: {
+            groups: [
+              { name: 'firebase-firestore', test: /node_modules[\\/]@firebase[\\/](firestore|webchannel-wrapper)/ },
+              { name: 'firebase', test: /node_modules[\\/](@firebase|firebase)[\\/]/ },
+              { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
+            ],
+          },
+        },
+      },
     },
     plugins: [
       react(),

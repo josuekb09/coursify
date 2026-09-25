@@ -1,6 +1,7 @@
 import Icons from "@/components/icons"
 import Logo from "@/components/logo"
 import { nav, STORAGE_CAP_BYTES } from "@/data"
+import { FOUNDER_EMAIL } from "@/security"
 import { useApp } from "@/store"
 import type { View } from "@/types"
 import { formatBytes } from "@/utils"
@@ -96,7 +97,7 @@ export default function Sidebar({
 
       <div className="mt-4 pt-3 border-t border-line/60 space-y-1 text-xs text-muted">
         <a
-          href="mailto:kabuyaentambwe03@gmail.com"
+          href={`mailto:${FOUNDER_EMAIL}`}
           className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 hover:bg-black/[0.03] hover:text-ink transition font-medium"
           title="Email platform creator & support"
         >
@@ -110,7 +111,7 @@ export default function Sidebar({
           className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 hover:bg-black/[0.03] hover:text-[#c13584] transition font-medium"
           title="Official Instagram community"
         >
-          <Icons.Instagram className="h-4 w-4 shrink-0 text-pink-500" />
+          <Icons.Instagram className="h-4 w-4 shrink-0 text-navy" />
           <span className="truncate">@cours.ify ↗</span>
         </a>
       </div>

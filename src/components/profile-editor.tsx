@@ -7,7 +7,8 @@ import type { Educator, InstitutionLevel } from "@/types"
 import { useState, type FormEvent } from "react"
 
 const field =
-  "h-10 w-full rounded-lg border border-line bg-canvas px-3 text-sm text-ink outline-none focus:border-navy"
+  "h-11 w-full rounded-xl border border-line bg-canvas px-3 text-sm text-ink outline-none transition-shadow focus:border-navy focus:bg-surface focus:shadow-[0_0_0_4px_rgba(26,43,74,0.10)] disabled:opacity-50"
+const label = "mb-1.5 block text-[12px] font-semibold text-ink"
 
 export default function ProfileEditor({
   educator,
@@ -89,23 +90,28 @@ export default function ProfileEditor({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
       <button
         type="button"
-        className="absolute inset-0 bg-navy/40"
+        className="animate-fade-in absolute inset-0 bg-navy/40 backdrop-blur-[2px]"
         aria-label="Close editor"
         disabled={locked}
         onClick={onClose}
       />
       <form
         onSubmit={handleSubmit}
-        className="relative flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-line bg-surface shadow-[0_24px_80px_rgba(18,20,28,0.18)] sm:rounded-2xl"
+        role="dialog"
+        aria-modal="true"
+        className="animate-sheet-up relative flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-line bg-surface shadow-[0_24px_80px_rgba(18,20,28,0.18)] sm:rounded-2xl"
       >
-        <div className="flex items-center justify-between border-b border-line px-5 py-4">
-          <p className="text-sm font-semibold text-ink">Edit profile</p>
+        <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4 sm:px-6">
+          <div>
+            <h2 className="font-display text-[17px] font-bold tracking-[-0.01em] text-ink">Edit profile</h2>
+            <p className="mt-0.5 text-[13px] text-muted">This is what colleagues see when they find you.</p>
+          </div>
           <button
             type="button"
-            className="grid h-9 w-9 place-items-center rounded-lg text-ink disabled:opacity-50"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-muted transition-colors hover:bg-canvas hover:text-ink disabled:opacity-50"
             aria-label="Close"
             disabled={locked}
             onClick={onClose}
@@ -114,17 +120,32 @@ export default function ProfileEditor({
           </button>
         </div>
 
-        <div className="space-y-3.5 overflow-y-auto px-5 py-5">
-          <div className="flex items-center gap-4">
-            <Avatar educator={preview} size={72} rounded="rounded-2xl" />
-            <div className="flex flex-wrap gap-2">
+        <div className="space-y-4 overflow-y-auto px-5 py-5 sm:px-6">
+          <div className="flex items-center gap-4 rounded-2xl bg-canvas p-3">
+            <button
+              type="button"
+              onClick={() => setCropping(true)}
+              disabled={locked}
+              className="group relative shrink-0 rounded-full"
+              aria-label="Change photo"
+            >
+              <Avatar educator={preview} size={72} rounded="rounded-full" />
+              <span className="absolute inset-0 grid place-items-center rounded-full bg-navy/55 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                <Icons.Camera className="h-5 w-5" />
+              </span>
+            </button>
+            <div className="min-w-0">
+              <p className="text-[13.5px] font-semibold text-ink">Profile photo</p>
+              <p className="text-[12px] text-muted">A clear, friendly headshot works best.</p>
+              <div className="mt-2 flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={() => setCropping(true)}
                 disabled={locked}
-                className="rounded-lg border border-line px-3 py-2 text-[13px] font-medium text-ink hover:border-line-strong disabled:opacity-50"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[12.5px] font-medium text-ink transition-colors hover:border-line-strong disabled:opacity-50"
               >
-                Upload photo
+                <Icons.Camera className="h-3.5 w-3.5" />
+                {form.photoData ? "Change" : "Upload photo"}
               </button>
               {form.photoData ? (
                 <button
@@ -134,11 +155,12 @@ export default function ProfileEditor({
                     setForm({ ...form, photoData: null })
                     setCropping(false)
                   }}
-                  className="rounded-lg px-3 py-2 text-[13px] font-medium text-muted hover:text-ink disabled:opacity-50"
+                  className="h-8 rounded-lg px-3 text-[12.5px] font-medium text-muted transition-colors hover:text-ink disabled:opacity-50"
                 >
                   Remove
                 </button>
               ) : null}
+              </div>
             </div>
           </div>
           {cropping ? (
@@ -152,7 +174,7 @@ export default function ProfileEditor({
           ) : null}
 
           <label className="block">
-            <span className="mb-1.5 block font-mono text-[11px] uppercase tracking-[0.12em] text-muted">
+            <span className={label}>
               Full name
             </span>
             <input
@@ -163,8 +185,8 @@ export default function ProfileEditor({
             />
           </label>
           <label className="block">
-            <span className="mb-1.5 block font-mono text-[11px] uppercase tracking-[0.12em] text-muted">
-              School / institution
+            <span className={label}>
+              School
             </span>
             <input
               value={form.school}
@@ -174,8 +196,8 @@ export default function ProfileEditor({
             />
           </label>
           <div>
-            <span className="mb-1.5 block font-mono text-[11px] uppercase tracking-[0.12em] text-muted">
-              Institution type
+            <span className={label}>
+              Where you teach
             </span>
             <div className="grid grid-cols-2 gap-2">
               {(
@@ -189,10 +211,10 @@ export default function ProfileEditor({
                   key={id}
                   disabled={locked}
                   onClick={() => setForm({ ...form, institutionLevel: id })}
-                  className={`rounded-lg border px-3 py-2 text-[13px] font-semibold disabled:opacity-50 ${
+                  className={`h-11 rounded-xl border px-3 text-[13px] font-semibold transition-colors disabled:opacity-50 ${
                     form.institutionLevel === id
                       ? "border-navy bg-navy-soft text-navy"
-                      : "border-line bg-canvas text-muted hover:text-ink"
+                      : "border-line bg-surface text-muted hover:border-line-strong hover:text-ink"
                   }`}
                 >
                   {label}
@@ -201,8 +223,8 @@ export default function ProfileEditor({
             </div>
           </div>
           <div>
-            <span className="mb-1.5 block font-mono text-[11px] uppercase tracking-[0.12em] text-muted">
-              Primary subject taught
+            <span className={label}>
+              Main subject
             </span>
             <SubjectPicker
               value={form.subject}
@@ -211,34 +233,41 @@ export default function ProfileEditor({
             />
           </div>
           <label className="block">
-            <span className="mb-1.5 block font-mono text-[11px] uppercase tracking-[0.12em] text-muted">
-              Bio / credentials
+            <span className={label}>
+              Bio
             </span>
             <textarea
               value={form.bio}
               onChange={(event) => setForm({ ...form, bio: event.target.value })}
               rows={5}
+              maxLength={800}
               disabled={locked}
-              className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-navy disabled:opacity-50"
+              placeholder="e.g. Grade 10–12 Mathematics teacher in Soweto. I build CAPS-aligned revision packs and love a good geometry proof."
+              className="w-full resize-none rounded-xl border border-line bg-canvas px-3 py-2.5 text-sm leading-relaxed text-ink outline-none transition-shadow focus:border-navy focus:bg-surface focus:shadow-[0_0_0_4px_rgba(26,43,74,0.10)] disabled:opacity-50"
             />
+            <span className="mt-1 block text-right text-[11px] tabular-nums text-muted">{form.bio.length}/800</span>
           </label>
 
-          {error ? <p className="text-sm text-[#8a3b32]">{error}</p> : null}
+          {error && !confirmDelete ? (
+            <p role="alert" className="flex items-start gap-2 rounded-xl bg-[#fbeeec] px-3 py-2.5 text-[13px] text-[#8a3b32]">
+              <Icons.Alert className="mt-0.5 h-4 w-4 shrink-0" />
+              {error}
+            </p>
+          ) : null}
         </div>
 
         {isOwner && confirmDelete ? (
-          <div className="border-t border-[#ead7d4] bg-[#fbf6f5] px-5 py-4">
-            <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-[#8a3b32]">
-              Delete account
+          <div className="animate-fade-in border-t border-[#ead7d4] bg-[#fbf6f5] px-5 py-4 sm:px-6">
+            <p className="flex items-center gap-1.5 text-[13.5px] font-semibold text-[#8a3b32]">
+              <Icons.Alert className="h-4 w-4" />
+              Delete your account
             </p>
             <p className="mt-1.5 text-[13px] leading-relaxed text-ink/80">
               This permanently removes your profile, uploads, messages, meetups, and login.
               Enter your password to confirm.
             </p>
             <label className="mt-3 block">
-              <span className="mb-1.5 block font-mono text-[11px] uppercase tracking-[0.12em] text-[#8a3b32]">
-                Password
-              </span>
+              <span className="mb-1.5 block text-[12px] font-semibold text-[#8a3b32]">Password</span>
               <input
                 type="password"
                 value={deletePassword}
@@ -258,7 +287,7 @@ export default function ProfileEditor({
                   setDeletePassword("")
                   setError(null)
                 }}
-                className="rounded-lg border border-line bg-white px-3 py-2 text-[13px] font-medium text-ink disabled:opacity-50"
+                className="h-10 rounded-xl border border-line bg-surface px-3.5 text-[13px] font-medium text-ink disabled:opacity-50"
               >
                 Keep account
               </button>
@@ -266,7 +295,7 @@ export default function ProfileEditor({
                 type="button"
                 disabled={deleting || !deletePassword.trim()}
                 onClick={() => void handleDelete()}
-                className="rounded-lg bg-[#8a3b32] px-3 py-2 text-[13px] font-semibold text-white hover:bg-[#733129] disabled:opacity-60"
+                className="h-10 rounded-xl bg-[#8a3b32] px-3.5 text-[13px] font-semibold text-white transition-colors hover:bg-[#733129] disabled:opacity-60"
               >
                 {deleting ? "Deleting…" : "Permanently delete account"}
               </button>
@@ -275,7 +304,7 @@ export default function ProfileEditor({
           </div>
         ) : null}
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-4 sm:px-6">
           {isOwner ? (
             <button
               type="button"
@@ -284,7 +313,7 @@ export default function ProfileEditor({
                 setConfirmDelete(true)
                 setError(null)
               }}
-              className="text-[13px] font-semibold text-[#8a3b32] hover:underline disabled:opacity-50"
+              className="text-[13px] font-medium text-muted transition-colors hover:text-[#8a3b32] disabled:opacity-50"
             >
               Delete account
             </button>
@@ -296,14 +325,14 @@ export default function ProfileEditor({
               type="button"
               onClick={onClose}
               disabled={locked}
-              className="rounded-lg border border-line px-3.5 py-2 text-sm font-medium text-ink disabled:opacity-50"
+              className="h-10 rounded-xl px-4 text-sm font-medium text-muted transition-colors hover:text-ink disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={locked}
-              className="rounded-lg bg-navy px-3.5 py-2 text-sm font-semibold text-white hover:bg-navy-hover disabled:opacity-60"
+              className="h-10 rounded-xl bg-navy px-4 text-sm font-semibold text-white transition-colors hover:bg-navy-hover disabled:opacity-60"
             >
               {saving ? "Saving…" : "Save changes"}
             </button>
