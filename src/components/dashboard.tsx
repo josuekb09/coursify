@@ -224,7 +224,7 @@ export default function Dashboard({
         </section>
       ) : null}
 
-      <section className="mt-6 grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 lg:grid-cols-4">
+      <section className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {stats.map((item) => (
           <div
             key={item.label}

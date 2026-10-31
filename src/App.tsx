@@ -26,7 +26,10 @@ function EmailVerificationBanner() {
   if (emailVerified) return null
   return (
     <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-line bg-warn-soft px-4 py-2 text-center text-[13px] text-warn">
-      <span>Please confirm your email address. We sent you a link when you signed up.</span>
+      <span>
+        Please confirm your email address.
+        <span className="hidden sm:inline"> We sent you a link when you signed up.</span>
+      </span>
       <button
         type="button"
         disabled={sent}

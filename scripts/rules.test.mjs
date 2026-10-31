@@ -117,6 +117,12 @@ await check("cannot message into a mismatched conversation", () =>
   assertFails(setDoc(doc(db(bob), "messages/m2"), { conversationId: "alice:eve", senderId: "bob", participantIds: ["alice", "bob"], body: "x" })))
 await check("sends a normal message", () =>
   assertSucceeds(setDoc(doc(db(bob), "messages/m2"), { conversationId: "alice:bob", senderId: "bob", participantIds: ["alice", "bob"], body: "hey" })))
+await check("app message with attachment is accepted", () =>
+  assertSucceeds(setDoc(doc(db(bob), "messages/m3"), {
+    conversationId: "alice:bob", senderId: "bob", participantIds: ["alice", "bob"], body: "Shared memo.pdf",
+    createdAt: "now", attachmentUrl: "https://example.test/memo.pdf", attachmentName: "memo.pdf",
+    attachmentType: "application/pdf", attachmentSize: "0.3 KB",
+  })))
 await check("conversation id must match participants", () =>
   assertFails(setDoc(doc(db(bob), "conversations/bob:zed"), { participantIds: ["alice", "bob"], lastMessage: "x" })))
 await check("conversation create works", () =>

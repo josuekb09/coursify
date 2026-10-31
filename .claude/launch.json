@@ -4,8 +4,20 @@
     {
       "name": "coursify-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 8443
+    },
+    {
+      "name": "coursify-emulated",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:emulators"
+      ],
+      "port": 8444
     }
   ]
 }

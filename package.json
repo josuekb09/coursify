@@ -10,7 +10,8 @@
     "format": "oxfmt",
     "test:storage": "firebase emulators:exec --only auth,storage --project demo-coursify \"node scripts/storage-roundtrip.test.mjs\"",
     "deploy": "npm run build && firebase deploy",
-    "test:rules": "firebase emulators:exec --only firestore,storage --project demo-coursify \"node scripts/rules.test.mjs\""
+    "test:rules": "firebase emulators:exec --only firestore,storage --project demo-coursify \"node scripts/rules.test.mjs\"",
+    "dev:emulators": "vite --host 0.0.0.0 --mode emulators --port 8444"
   },
   "dependencies": {
     "firebase": "^13.1.0",

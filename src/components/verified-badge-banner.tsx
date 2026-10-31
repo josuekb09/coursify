@@ -17,12 +17,18 @@ export default function VerifiedBadgeBanner({
   useEffect(() => {
     if (!currentUser) return
     const key = `coursify.celebrated_badge.${currentUser.id}`
-    setDismissed(localStorage.getItem(key) === "true")
+    try {
+      setDismissed(localStorage.getItem(key) === "true")
+    } catch {
+      setDismissed(false)
+    }
   }, [currentUser])
 
   function handleDismiss() {
-    if (currentUser) {
-      localStorage.setItem(`coursify.celebrated_badge.${currentUser.id}`, "true")
+    try {
+      if (currentUser) localStorage.setItem(`coursify.celebrated_badge.${currentUser.id}`, "true")
+    } catch {
+      /* private mode: dismissed for this visit only */
     }
     setDismissed(true)
   }
@@ -33,48 +39,34 @@ export default function VerifiedBadgeBanner({
   // Case 1: Newly verified or earned via merit (Celebratory Banner)
   if (currentUser?.verified && currentUser?.badgeClaimed && !dismissed) {
     return (
-      <div className="mx-4 mt-4 overflow-hidden rounded-2xl border border-sky-300/80 bg-gradient-to-r from-sky-50 via-surface to-sky-50 px-5 py-4 shadow-sm animate-in fade-in slide-in-from-top-2 sm:mx-6 lg:mx-10">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start sm:items-center gap-3.5">
-            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-sky-600 text-white shadow-sm ring-4 ring-sky-100">
-              <Icons.VerifiedSeal className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-sky-700 bg-sky-100 px-2 py-0.5 rounded-full">
-                  Merit Verified Achieved
-                </span>
-                <span className="text-xs text-muted font-mono">Platform Standard</span>
-              </div>
-              <p className="mt-1 text-[14px] font-bold tracking-tight text-ink sm:text-[15px]">
-                🎉 Congratulations, {currentUser.name}! You&apos;ve earned the Verified Educator Badge
-              </p>
-              <p className="mt-0.5 text-xs text-muted">
-                Merit system unlocked: 100% complete faculty profile + 3 or more published curriculum resources.
-              </p>
-            </div>
+      <div className="mx-4 mt-4 animate-sheet-up rounded-2xl border border-navy/15 bg-gradient-to-r from-navy-soft via-surface to-navy-soft px-4 py-3 sm:mx-6 sm:px-5 lg:mx-10">
+        <div className="flex items-center gap-3">
+          <Icons.VerifiedSeal className="h-8 w-8 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[14px] font-semibold leading-snug text-ink">
+              You&apos;re a verified educator, {currentUser.name.split(" ")[0]}.
+            </p>
+            <p className="hidden text-[12.5px] text-muted sm:block">
+              Your profile is complete and you&apos;ve shared three resources. The badge now shows on your profile.
+            </p>
           </div>
-
-          <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-            {onViewProfile ? (
-              <button
-                type="button"
-                onClick={onViewProfile}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-surface px-3.5 py-2 text-xs font-semibold text-sky-800 shadow-2xs hover:bg-sky-50 transition"
-              >
-                <Icons.Eye className="h-3.5 w-3.5" />
-                <span>View Profile</span>
-              </button>
-            ) : null}
+          {onViewProfile ? (
             <button
               type="button"
-              onClick={handleDismiss}
-              className="inline-flex items-center gap-1 rounded-xl bg-sky-700 px-3.5 py-2 text-xs font-semibold text-white shadow-2xs hover:bg-sky-800 transition"
+              onClick={onViewProfile}
+              className="hidden h-9 shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[13px] font-semibold text-navy hover:border-line-strong sm:inline-flex"
             >
-              <span>Dismiss</span>
-              <Icons.Close className="h-3.5 w-3.5 opacity-75" />
+              View profile
             </button>
-          </div>
+          ) : null}
+          <button
+            type="button"
+            onClick={handleDismiss}
+            aria-label="Dismiss"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-muted hover:bg-black/[0.04] hover:text-ink"
+          >
+            <Icons.Close className="h-4 w-4" />
+          </button>
         </div>
       </div>
     )

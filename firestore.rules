@@ -294,7 +294,7 @@ service cloud.firestore {
         && optString(incoming(), 'attachmentUrl', 950000)
         && optString(incoming(), 'attachmentName', 200)
         && optString(incoming(), 'attachmentType', 120)
-        && optNumber(incoming(), 'attachmentSize');
+        && optString(incoming(), 'attachmentSize', 30);
       // People can only take back their own words.
       allow delete: if signedIn() && existing().senderId == request.auth.uid;
     }

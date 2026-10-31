@@ -110,6 +110,26 @@ npm run dev
 
 Open http://localhost:8443/
 
+## Local development without the live database
+
+Run the app against the Firebase emulators, with seeded South African teachers, messages and meetups:
+
+```powershell
+npx firebase emulators:start --only auth,firestore,storage --project demo-coursify
+node scripts/seed-emulators.mjs
+npm run dev:emulators
+```
+
+Open http://localhost:8444/ and sign in with the seeded account printed by the seed script.
+
+## Security rules tests
+
+```powershell
+npm run test:rules
+```
+
+Runs every Firestore and Storage rule check in `scripts/rules.test.mjs` against the emulators.
+
 ## Optional: `firebase init`
 
 Skip this if you cloned this repo. Only run it on an empty project.

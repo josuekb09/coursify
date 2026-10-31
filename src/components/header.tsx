@@ -189,9 +189,11 @@ export default function Header({
           <button
             type="button"
             onClick={onUpload}
-            className="hidden rounded-lg border border-line bg-surface px-3.5 py-2 text-sm font-medium text-ink transition-colors hover:border-line-strong sm:inline-flex"
+            className="hidden h-10 items-center gap-2 whitespace-nowrap rounded-lg bg-navy px-3.5 text-sm font-semibold text-white shadow-[0_6px_16px_rgba(26,43,74,0.18)] transition-colors hover:bg-navy-hover sm:inline-flex"
           >
-            Upload resource
+            <Icons.Upload className="h-4 w-4" />
+            <span className="hidden lg:inline">Upload resource</span>
+            <span className="lg:hidden">Upload</span>
           </button>
           <button
             type="button"

@@ -86,8 +86,9 @@ async function upload(path, bytes, contentType) {
 async function educator(key) {
   const uid = await as(key)
   const person = people[key]
+  // Emails are private: they live in accounts/{uid}, never in the public profile.
+  await setDoc(doc(db, "accounts", uid), { email: person.email, updatedAt: ago(0) })
   await setDoc(doc(db, "educators", uid), {
-    email: person.email,
     name: person.name,
     initials: person.name.split(" ").map((part) => part[0]).join("").slice(0, 2),
     school: person.school,
@@ -119,7 +120,8 @@ async function resource(key, id, fields, file) {
       hasFile: true,
     }
   }
-  await setDoc(doc(db, "resources", id), { authorId: uid, downloads: 0, saves: 0, createdAt: ago(60 * 24 * 3), ...fields, ...extra })
+  // Counters start at zero: the rules only let them move one step at a time.
+  await setDoc(doc(db, "resources", id), { authorId: uid, createdAt: ago(60 * 24 * 3), ...fields, ...extra, downloads: 0, saves: 0 })
 }
 
 async function message(from, to, minutesAgo, body, attachment) {
@@ -164,7 +166,7 @@ await resource("sipho", "res-seed-geometry", { title: "Euclidean geometry: Term 
 
 // Sipho <-> Thandi: grouped messages, an image, a file, a voice note and read receipts.
 await as("sipho")
-const photo = readFileSync(new URL("../public/landing-images/teachers-planning.jpg", import.meta.url))
+const photo = readFileSync(new URL("../public/landing-images/pretoria-assembly.jpg", import.meta.url))
 const photoUrl = await upload(`resources/${uids.sipho}/chat/att-seed_cluster.jpg`, new Uint8Array(photo), "image/jpeg")
 const memoUrl = await upload(`resources/${uids.sipho}/chat/att-seed_memo.pdf`, pdfBytes("Paper 2 memo"), "application/pdf")
 await as("thandi")
@@ -191,7 +193,7 @@ await as("sipho")
 await setDoc(doc(db, "events", "evt-seed-cluster"), {
   title: "Gauteng Maths & Science cluster: Paper 2 moderation",
   description: "Bring three marked scripts per class. We'll moderate together, compare memos and plan the Term 4 revision schedule.",
-  hostId: uids.sipho, format: "in-person", startsAt: ahead(2, 9), location: "Morris Isaacson High School, Soweto", rsvpIds: [uids.sipho, uids.pieter], createdAt: ago(600),
+  hostId: uids.sipho, format: "in-person", startsAt: ahead(2, 9), location: "Morris Isaacson High School, Soweto", rsvpIds: [uids.sipho], createdAt: ago(600),
 })
 await as("ayesha")
 await setDoc(doc(db, "events", "evt-seed-online"), {
@@ -211,6 +213,8 @@ await setDoc(doc(db, "events", "evt-seed-past"), {
   hostId: uids.thandi, format: "online", startsAt: ahead(-20, 16), meetingUrl: "https://zoom.us/j/123456789", rsvpIds: [uids.thandi], createdAt: ago(60 * 24 * 30),
 })
 await updateDoc(doc(db, "events", "evt-seed-cluster"), { rsvpIds: arrayUnion(uids.thandi) })
+await as("pieter")
+await updateDoc(doc(db, "events", "evt-seed-cluster"), { rsvpIds: arrayUnion(uids.pieter) })
 
 await signOut(auth)
 console.log("Seeded. Sign in as thandi@school.test /", PASSWORD)
