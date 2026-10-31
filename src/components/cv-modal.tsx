@@ -52,7 +52,7 @@ export default function CvModal({
           <p className="mt-1 text-sm text-muted">
             {educator.subject} · {educator.school}
           </p>
-          <p className="mt-1 font-mono text-[12px] text-muted">{educator.email}</p>
+          {educator.email ? <p className="mt-1 font-mono text-[12px] text-muted">{educator.email}</p> : null}
           <h3 className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
             Bio & credentials
           </h3>

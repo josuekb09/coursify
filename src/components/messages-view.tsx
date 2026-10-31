@@ -16,7 +16,6 @@ import {
 } from "@/components/chat/chat-parts"
 import Icons from "@/components/icons"
 import { MAX_FILE_BYTES } from "@/data"
-import { isFounderEmail } from "@/security"
 import { useApp } from "@/store"
 import type { ChatAttachment, ChatMessage, Educator } from "@/types"
 import { educatorMatchesQuery, formatBytes, formatEducatorActivity, isEducatorOnline } from "@/utils"
@@ -427,7 +426,7 @@ function Thread({
 
   const activity = formatEducatorActivity(peer.lastActiveAt)
   const peerTyping = conversation ? isTyping(conversation.typingAt[peer.id], messages.at(-1)) : false
-  const founder = isFounderEmail(peer.email)
+  const founder = Boolean(peer.founder)
 
   // Re-render every few seconds so "typing…" and presence labels expire on their own.
   useEffect(() => {

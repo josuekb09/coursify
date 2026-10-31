@@ -1,7 +1,6 @@
 import EducatorCard from "@/components/educator-card"
 import Icons from "@/components/icons"
 import { institutionLabels, subjectOptions } from "@/data"
-import { isFounderEmail } from "@/security"
 import { useApp } from "@/store"
 import type { InstitutionLevel, Subject } from "@/types"
 import { educatorMatchesQuery, rankEducatorSearchResults } from "@/utils"

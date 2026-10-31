@@ -1,4 +1,5 @@
 import Icons from "@/components/icons"
+import { openCookieSettings } from "@/components/cookie-consent"
 import Logo, { CoursifyMark } from "@/components/logo"
 import { FOUNDER_EMAIL } from "@/security"
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react"
@@ -675,7 +676,12 @@ export default function Landing({ onSignIn, onGetStarted }: { onSignIn: () => vo
           </div>
           <div className="mt-14 flex flex-col gap-2 border-t border-white/10 pt-6 text-[12.5px] text-white/40 sm:flex-row sm:items-center sm:justify-between">
             <p>© {new Date().getFullYear()} Coursify. Built for South African classrooms.</p>
-            <p>Photography courtesy of USAID, public domain.</p>
+            <nav aria-label="Legal" className="flex flex-wrap gap-x-5 gap-y-1">
+              <a href="/privacy" className="hover:text-white">Privacy</a>
+              <a href="/terms" className="hover:text-white">Terms</a>
+              <a href="/cookies" className="hover:text-white">Cookies</a>
+              <button type="button" onClick={openCookieSettings} className="hover:text-white">Cookie settings</button>
+            </nav>
           </div>
         </div>
       </footer>

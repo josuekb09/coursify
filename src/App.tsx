@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react"
 import AdminAnalyticsView from "@/components/admin-analytics-view"
 import AuthScreen from "@/components/auth-screen"
+import CookieConsent from "@/components/cookie-consent"
+import LegalPage, { legalDocFromPath } from "@/components/legal-page"
 import Dashboard from "@/components/dashboard"
 import DirectoryView from "@/components/directory-view"
 import Landing from "@/components/landing"
@@ -18,6 +20,32 @@ import VerifiedBadgeBanner from "@/components/verified-badge-banner"
 import { useApp } from "@/store"
 import type { AuthMode, View } from "@/types"
 
+function EmailVerificationBanner() {
+  const { emailVerified, resendVerification, notify } = useApp()
+  const [sent, setSent] = useState(false)
+  if (emailVerified) return null
+  return (
+    <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-line bg-warn-soft px-4 py-2 text-center text-[13px] text-warn">
+      <span>Please confirm your email address. We sent you a link when you signed up.</span>
+      <button
+        type="button"
+        disabled={sent}
+        onClick={async () => {
+          const error = await resendVerification()
+          if (error) notify(error)
+          else {
+            setSent(true)
+            notify("Verification email sent.")
+          }
+        }}
+        className="font-semibold underline disabled:no-underline disabled:opacity-70"
+      >
+        {sent ? "Email sent" : "Resend link"}
+      </button>
+    </p>
+  )
+}
+
 function WorkspaceSplash() {
   return (
     <div className="grid min-h-full place-items-center bg-canvas text-ink">
@@ -29,6 +57,19 @@ function WorkspaceSplash() {
 }
 
 export default function App() {
+  const legalDoc = legalDocFromPath(window.location.pathname)
+  if (legalDoc) {
+    return (
+      <>
+        <LegalPage doc={legalDoc} />
+        <CookieConsent />
+      </>
+    )
+  }
+  return <Workspace />
+}
+
+function Workspace() {
   const { currentUser, educatorById, isFounder, live, signedIn, ready } = useApp()
   const [view, setView] = useState<View>("dashboard")
   const [profileId, setProfileId] = useState<string | null>(null)
@@ -88,6 +129,7 @@ export default function App() {
             }}
           />
           <ToastViewport />
+          <CookieConsent />
         </>
       )
     }
@@ -104,6 +146,7 @@ export default function App() {
           }}
         />
         <ToastViewport />
+        <CookieConsent />
       </>
     )
   }
@@ -184,6 +227,7 @@ export default function App() {
         onOpenMenu={() => setMenuOpen(true)}
       />
 
+      <EmailVerificationBanner />
       <VerifiedBadgeBanner onViewProfile={() => goProfile(user.id)} />
 
       <div className="mx-auto flex max-w-[1440px]">
@@ -244,6 +288,7 @@ export default function App() {
 
       {uploadOpen ? <UploadModal onClose={() => setUploadOpen(false)} /> : null}
       <ToastViewport />
+      <CookieConsent />
     </div>
   )
 }

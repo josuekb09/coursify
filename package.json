@@ -9,14 +9,16 @@
     "preview": "vite preview",
     "format": "oxfmt",
     "test:storage": "firebase emulators:exec --only auth,storage --project demo-coursify \"node scripts/storage-roundtrip.test.mjs\"",
-    "deploy": "npm run build && firebase deploy"
+    "deploy": "npm run build && firebase deploy",
+    "test:rules": "firebase emulators:exec --only firestore,storage --project demo-coursify \"node scripts/rules.test.mjs\""
   },
   "dependencies": {
-    "firebase": "^12.4.0",
+    "firebase": "^13.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
     "@tailwindcss/vite": "^4.0.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
@@ -25,6 +27,9 @@
     "oxfmt": "^0.2.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0",
-    "vite": "^8.0.5"
+    "vite": "^8.3.5"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.7"
   }
 }

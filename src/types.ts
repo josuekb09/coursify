@@ -26,7 +26,9 @@ export type Subject = string
 
 export type Educator = {
   id: string
+  /** Empty for other people: addresses are private (accounts/{uid}), except to the founder. */
   email: string
+  founder?: boolean
   name: string
   initials: string
   school: string
@@ -125,6 +127,7 @@ export type SignupInput = {
   bio?: string
   password: string
   institutionLevel: InstitutionLevel
+  acceptedTerms?: boolean
 }
 
 export type ProfilePatch = {

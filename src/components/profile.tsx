@@ -17,7 +17,6 @@ import {
   kindToTab,
 } from "@/utils"
 import { useEffect, useMemo, useState } from "react"
-import { isFounderEmail } from "@/security"
 
 export default function Profile({
   educator,
@@ -59,7 +58,7 @@ export default function Profile({
   }
 
   const isOwner = currentUser?.id === educator.id
-  const founder = isFounderEmail(educator.email)
+  const founder = Boolean(educator.founder)
   const profileIncomplete = isOwner && (!educator.bio.trim() || !educator.school.trim())
   const mine = isOwner ? myResources : resources.filter((item) => item.authorId === educator.id)
   const items = useMemo(() => mine.filter((item) => kindToTab(item.kind) === tab), [mine, tab])

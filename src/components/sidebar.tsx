@@ -114,6 +114,11 @@ export default function Sidebar({
           <Icons.Instagram className="h-4 w-4 shrink-0 text-navy" />
           <span className="truncate">@cours.ify ↗</span>
         </a>
+        <p className="flex flex-wrap gap-x-3 px-2.5 pt-1 text-[11px]">
+          <a href="/privacy" target="_blank" rel="noopener" className="hover:text-ink">Privacy</a>
+          <a href="/terms" target="_blank" rel="noopener" className="hover:text-ink">Terms</a>
+          <a href="/cookies" target="_blank" rel="noopener" className="hover:text-ink">Cookies</a>
+        </p>
       </div>
 
       <button

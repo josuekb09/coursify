@@ -49,6 +49,8 @@ import { dispatchOfflineEmailNotification } from "@/notifications"
 import {
   EmailAuthProvider,
   createUserWithEmailAndPassword,
+  sendEmailVerification,
+  sendPasswordResetEmail,
   deleteUser,
   onAuthStateChanged,
   reauthenticateWithCredential,
@@ -129,6 +131,9 @@ type AppStore = {
   live: boolean
   login: (email: string, password: string) => Promise<string | null>
   signup: (input: SignupInput) => Promise<string | null>
+  resetPassword: (email: string) => Promise<string | null>
+  resendVerification: () => Promise<string | null>
+  emailVerified: boolean
   logout: () => void
   deleteAccount: (password: string) => Promise<string | null>
   updateProfile: (patch: ProfilePatch) => Promise<string | null>
@@ -179,9 +184,12 @@ function compact<T extends Record<string, unknown>>(value: T) {
 }
 
 function toEducator(id: string, data: Record<string, unknown>): Educator {
+  const founder = data.founder === true || isFounderEmail(String(data.email ?? ""))
   return {
     id,
+    // Only legacy profiles carry an email; new ones keep it in the private accounts/{uid} doc.
     email: String(data.email ?? ""),
+    founder,
     name: String(data.name ?? "Educator"),
     initials: String(data.initials ?? initialsFromName(String(data.name ?? "E"))),
     school: String(data.school ?? ""),
@@ -190,8 +198,8 @@ function toEducator(id: string, data: Record<string, unknown>): Educator {
     joinedYear: Number(data.joinedYear) || new Date().getFullYear(),
     createdAt: String(data.createdAt ?? new Date().toISOString()),
     storageBytes: Number(data.storageBytes) || 0,
-    verified: isFounderEmail(String(data.email ?? "")) || data.badgeClaimed === true || data.verified === true,
-    badgeClaimed: isFounderEmail(String(data.email ?? "")) || data.badgeClaimed === true,
+    verified: founder || data.badgeClaimed === true || data.verified === true,
+    badgeClaimed: founder || data.badgeClaimed === true,
     institutionLevel: isInstitutionLevel(data.institutionLevel) ? data.institutionLevel : "high-school",
     photoData: typeof data.photoData === "string" ? data.photoData : undefined,
     lastActiveAt: typeof data.lastActiveAt === "string" ? data.lastActiveAt : undefined,
@@ -305,6 +313,7 @@ function educatorStub(user: User, extras?: Partial<Educator>): Educator {
   return {
     id: user.uid,
     email,
+    founder: isFounderEmail(email),
     name,
     initials: initialsFromName(name),
     school: extras?.school ?? "",
@@ -331,7 +340,6 @@ function persistablePhoto(photo: string | null | undefined) {
 function educatorPayload(profile: Educator) {
   const photoData = persistablePhoto(profile.photoData)
   return compact({
-    email: profile.email,
     name: profile.name,
     initials: profile.initials,
     school: profile.school,
@@ -704,12 +712,55 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   ts: "text/typescript",
 }
 
+// Storage rules refuse types a browser would execute, so code and web pages are kept as plain text.
+const ACTIVE_CONTENT = /^(text\/html|application\/xhtml\+xml|image\/svg\+xml|(text|application)\/(x-)?javascript)/i
+
 function contentTypeFor(file: File) {
-  return file.type || MIME_BY_EXTENSION[extensionOf(file.name)] || "application/octet-stream"
+  const type = file.type || MIME_BY_EXTENSION[extensionOf(file.name)] || "application/octet-stream"
+  return ACTIVE_CONTENT.test(type) ? "text/plain" : type
 }
 
 // Firestore documents are capped at 1 MiB, so only small files can travel inside one.
 const INLINE_FILE_LIMIT = 650_000
+
+export const TERMS_VERSION = "2026-10-31"
+
+/** Length beats complexity, but a password made of one character class is too easy to guess. */
+export function passwordIssue(password: string) {
+  if (password.length < 10) return "Use at least 10 characters for your password."
+  if (password.length > 128) return "That password is too long."
+  if (!/[a-zA-Z]/.test(password) || !/[0-9\W_]/.test(password)) {
+    return "Mix letters with at least one number or symbol."
+  }
+  return null
+}
+
+function badgeEvidenceFor(resources: Resource[], authorId: string) {
+  return resources
+    .filter((resource) => resource.authorId === authorId)
+    .slice(0, 3)
+    .map((resource) => resource.id)
+}
+
+const migratedProfiles = new Set<string>()
+
+/** Moves a legacy public email into the private accounts/{uid} document. */
+async function migratePrivateProfile(uid: string, authEmail: string, data: Record<string, unknown>) {
+  if (migratedProfiles.has(uid)) return
+  migratedProfiles.add(uid)
+  const email = normalizeEmail(authEmail)
+  if (!email) return
+  const db = getFirebaseDb()
+  try {
+    await setDoc(doc(db, "accounts", uid), { email, updatedAt: new Date().toISOString() }, { merge: true })
+    const patch: Record<string, unknown> = {}
+    if ("email" in data) patch.email = deleteField()
+    if (isFounderEmail(email) && data.founder !== true) patch.founder = true
+    if (Object.keys(patch).length) await updateDoc(doc(db, "educators", uid), patch)
+  } catch {
+    migratedProfiles.delete(uid)
+  }
+}
 
 export default function AppProvider({ children }: { children: ReactNode }) {
   const [authUser, setAuthUser] = useState<User | null>(null)
@@ -727,6 +778,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
   const [hydratedFiles, setHydratedFiles] = useState<Record<string, string>>({})
   const [sessionProfile, setSessionProfile] = useState<Educator | null>(null)
+  const [accountEmails, setAccountEmails] = useState<Record<string, string>>({})
   const lastMessageCountRef = useRef<number>(0)
   const lastHeartbeatRef = useRef<number>(0)
 
@@ -740,10 +792,44 @@ export default function AppProvider({ children }: { children: ReactNode }) {
 
   const currentUser = useMemo(() => {
     if (!authUser) return null
-    return educators.find((educator) => educator.id === authUser.uid) ?? sessionProfile
+    const found = educators.find((educator) => educator.id === authUser.uid) ?? sessionProfile
+    if (!found) return null
+    // The signed-in user's email comes from Auth, never from the public profile.
+    const email = normalizeEmail(authUser.email ?? found.email)
+    return found.email === email ? found : { ...found, email }
   }, [authUser, educators, sessionProfile])
   const signedIn = Boolean(authUser)
-  const isFounder = isFounderEmail(currentUser?.email ?? authUser?.email ?? "")
+  const isFounder = isFounderEmail(authUser?.email ?? "")
+
+  // Only the founder can read accounts/*; everyone else sees profiles without email addresses.
+  useEffect(() => {
+    if (!isFounder || !isFirebaseConfigured()) {
+      setAccountEmails({})
+      return
+    }
+    return onSnapshot(
+      collection(getFirebaseDb(), "accounts"),
+      (snap) => {
+        const next: Record<string, string> = {}
+        snap.docs.forEach((item) => {
+          const email = asRecord(item.data()).email
+          if (typeof email === "string") next[item.id] = email
+        })
+        setAccountEmails(next)
+      },
+      () => undefined,
+    )
+  }, [isFounder])
+
+  const visibleEducators = useMemo(
+    () =>
+      Object.keys(accountEmails).length === 0
+        ? educators
+        : educators.map((educator) =>
+            educator.email ? educator : { ...educator, email: accountEmails[educator.id] ?? "" },
+          ),
+    [accountEmails, educators],
+  )
   const badgeEligible = Boolean(
     currentUser &&
       !currentUser.verified &&
@@ -846,8 +932,12 @@ export default function AppProvider({ children }: { children: ReactNode }) {
         doc(db, "educators", uid),
         (snap) => {
           if (!snap.exists()) return
-          rememberProfile(toEducator(snap.id, asRecord(snap.data())))
+          const data = asRecord(snap.data())
+          rememberProfile(toEducator(snap.id, data))
           setLive(true)
+          if ("email" in data || (isFounderEmail(authUser.email ?? "") && data.founder !== true)) {
+            void migratePrivateProfile(uid, authUser.email ?? "", data)
+          }
         },
         onListenError,
       ),
@@ -1014,6 +1104,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
             verified: true,
             badgeClaimed: true,
             badgeClaimedAt: new Date().toISOString(),
+            badgeEvidence: badgeEvidenceFor(resources, authUser.uid),
           })
           rememberProfile({
             ...currentUser,
@@ -1026,7 +1117,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
         }
       })()
     }
-  }, [authUser?.uid, badgeEligible, currentUser, notify])
+  }, [authUser?.uid, badgeEligible, currentUser, notify, resources])
 
   const login = useCallback(async (email: string, password: string) => {
     if (!isFirebaseConfigured()) {
@@ -1071,7 +1162,9 @@ export default function AppProvider({ children }: { children: ReactNode }) {
     const emailError = professionalEmailError(email)
     if (!name) return "Please enter your full name."
     if (emailError) return emailError
-    if (input.password.length < 8) return "Password must be at least 8 characters."
+    const passwordError = passwordIssue(input.password)
+    if (passwordError) return passwordError
+    if (!input.acceptedTerms) return "Please accept the Terms of Use and Privacy Policy to continue."
     if (!isFirebaseConfigured()) {
       return "Coursify is not connected to Firebase yet. Add the VITE_FIREBASE_ keys and rebuild."
     }
@@ -1087,8 +1180,8 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       return firebaseErrorMessage(error)
     }
     const educator = compact({
-      email,
       name,
+      founder: isFounderEmail(email) || undefined,
       initials: initialsFromName(name),
       school,
       subject: input.subject ?? "Mathematics",
@@ -1103,12 +1196,21 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       createdAt: new Date().toISOString(),
     })
     setAuthUser(user)
-    rememberProfile(toEducator(user.uid, asRecord(educator)))
+    rememberProfile(toEducator(user.uid, asRecord({ ...educator, email })))
+    void sendEmailVerification(user).catch(() => undefined)
     setReady(true)
     setLive(true)
     try {
       await withTimeout(user.getIdToken(), 8_000, "Could not verify your session. Please try again.")
       await timedWrite(setDoc(doc(getFirebaseDb(), "educators", user.uid), educator))
+      await timedWrite(
+        setDoc(doc(getFirebaseDb(), "accounts", user.uid), {
+          email,
+          updatedAt: new Date().toISOString(),
+          acceptedTermsAt: new Date().toISOString(),
+          acceptedTermsVersion: TERMS_VERSION,
+        }),
+      )
       await timedWrite(
         setDoc(doc(getFirebaseDb(), "meta", "stats"), { hasAccounts: true, users: increment(1) }, { merge: true }),
       )
@@ -1117,6 +1219,36 @@ export default function AppProvider({ children }: { children: ReactNode }) {
     }
     return null
   }, [notify])
+
+  const resetPassword = useCallback(async (email: string) => {
+    const normalized = normalizeEmail(email)
+    if (!normalized) return "Enter the email address you signed up with."
+    if (!isFirebaseConfigured()) return "Coursify is not connected to Firebase yet."
+    try {
+      await withTimeout(
+        sendPasswordResetEmail(getFirebaseAuth(), normalized),
+        REQUEST_MS,
+        "Sending the reset email timed out. Please try again.",
+      )
+    } catch (error) {
+      // Same answer whether or not the address has an account, so the form cannot be used to
+      // find out who is registered.
+      const code = String((error as { code?: string })?.code ?? "")
+      if (code !== "auth/user-not-found" && code !== "auth/invalid-email") return firebaseErrorMessage(error)
+    }
+    return null
+  }, [])
+
+  const resendVerification = useCallback(async () => {
+    const user = getFirebaseAuth().currentUser
+    if (!user) return "Sign in first."
+    try {
+      await withTimeout(sendEmailVerification(user), REQUEST_MS, "Sending the email timed out. Please try again.")
+      return null
+    } catch (error) {
+      return firebaseErrorMessage(error)
+    }
+  }, [])
 
   const logout = useCallback(() => {
     void (async () => {
@@ -1261,6 +1393,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
           verified: true,
           badgeClaimed: true,
           badgeClaimedAt: new Date().toISOString(),
+          badgeEvidence: badgeEvidenceFor(resources, authUser.uid),
         }),
         "Could not claim your badge. Please try again.",
       )
@@ -1751,7 +1884,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
         await timedWrite(batch.commit())
 
         const recipient = educators.find((e) => e.id === peerId)
-        if (recipient && !isEducatorOnline(recipient.lastActiveAt)) {
+        if (recipient?.email && !isEducatorOnline(recipient.lastActiveAt)) {
           void dispatchOfflineEmailNotification({
             recipientEmail: recipient.email,
             recipientName: recipient.name,
@@ -1962,7 +2095,10 @@ export default function AppProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AppStore>(
     () => ({
-      educators,
+      resetPassword,
+      resendVerification,
+      emailVerified: Boolean(authUser?.emailVerified),
+      educators: visibleEducators,
       resources: resourcesWithFiles,
       posts,
       conversations,
@@ -2026,7 +2162,10 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       deleteResource,
       downloadResource,
       educatorLookup,
-      educators,
+      visibleEducators,
+      resetPassword,
+      resendVerification,
+      authUser?.emailVerified,
       events,
       feedPosts,
       followBackSuggestions,

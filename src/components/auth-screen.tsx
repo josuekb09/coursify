@@ -16,8 +16,9 @@ export default function AuthScreen({
   onMode: (next: AuthMode) => void
   onBack: () => void
 }) {
-  const { login, signup, hasAccounts } = useApp()
+  const { login, signup, hasAccounts, resetPassword } = useApp()
   const [error, setError] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [loginForm, setLoginForm] = useState({ email: "", password: "" })
   const [signupForm, setSignupForm] = useState<SignupInput>({
@@ -55,6 +56,17 @@ export default function AuthScreen({
     } finally {
       setBusy(false)
     }
+  }
+
+  async function handleReset() {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    setInfo(null)
+    const result = await resetPassword(loginForm.email)
+    setBusy(false)
+    if (result) setError(result)
+    else setInfo("If an account exists for that address, a reset link is on its way. Check your inbox and spam folder.")
   }
 
   function goToSignup(email?: string) {
@@ -138,7 +150,19 @@ export default function AuthScreen({
                     className={field}
                     autoComplete="current-password"
                   />
+                  <button
+                    type="button"
+                    onClick={handleReset}
+                    className="mt-2 text-[13px] font-semibold text-navy hover:text-navy-hover"
+                  >
+                    Forgot your password?
+                  </button>
                 </label>
+                {info ? (
+                  <p className="rounded-lg border border-line bg-navy-soft px-3.5 py-3 text-sm text-navy" role="status">
+                    {info}
+                  </p>
+                ) : null}
                 {error ? (
                   <div className="rounded-lg border border-[#ead7d4] bg-[#fbf6f5] px-3.5 py-3">
                     <p className="text-sm text-[#8a3b32]">{error}</p>
@@ -251,7 +275,26 @@ export default function AuthScreen({
                     autoComplete="new-password"
                   />
                   <span className="mt-1.5 block text-[12px] text-muted">
-                    At least 8 characters. Protected with industry-standard secure encryption.
+                    At least 10 characters, with a number or symbol.
+                  </span>
+                </label>
+                <label className="flex items-start gap-3 text-[13px] leading-relaxed text-muted">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(signupForm.acceptedTerms)}
+                    onChange={(event) => setSignupForm({ ...signupForm, acceptedTerms: event.target.checked })}
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-navy"
+                  />
+                  <span>
+                    I agree to the{" "}
+                    <a href="/terms" target="_blank" rel="noopener" className="font-semibold text-navy underline">
+                      Terms of Use
+                    </a>{" "}
+                    and the{" "}
+                    <a href="/privacy" target="_blank" rel="noopener" className="font-semibold text-navy underline">
+                      Privacy Policy
+                    </a>
+                    .
                   </span>
                 </label>
                 {error ? <p className="text-sm text-[#8a3b32]">{error}</p> : null}

@@ -1,11 +1,11 @@
 {
   "title": "Coursify",
-  "description": "Designed for educators, this minimalist dashboard streamlines resource management, enabling teachers to easily upload, access, and download curriculum materials.",
+  "description": "Coursify is where South African teachers share CAPS-aligned worksheets, slide decks and lesson plans, and meet the colleagues who made them.",
   "icons": {
     "icon": "/favicon.svg"
   },
   "robots": {
-    "index": false
+    "index": true
   },
   "accessibility": {
     "addBypassLinks": false,

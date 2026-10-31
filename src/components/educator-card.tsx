@@ -1,7 +1,6 @@
 import Avatar from "@/components/avatar"
 import Icons from "@/components/icons"
 import { institutionLabels } from "@/data"
-import { isFounderEmail } from "@/security"
 import { useApp } from "@/store"
 import type { Educator } from "@/types"
 import { followButtonLabel, formatEducatorActivity, isEducatorOnline } from "@/utils"
@@ -23,7 +22,7 @@ export default function EducatorCard({
   const isMutual = following && theyFollowYou
   const isSelf = currentUser?.id === educator.id
   const followLabel = followButtonLabel(following, theyFollowYou)
-  const isCreator = isFounderEmail(educator.email)
+  const isCreator = Boolean(educator.founder)
   const followers = followerCount(educator.id)
   const online = isEducatorOnline(educator.lastActiveAt)
   const activity = formatEducatorActivity(educator.lastActiveAt)

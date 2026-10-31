@@ -252,7 +252,7 @@ export default function AdminAnalyticsView() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="truncate text-sm font-semibold text-ink">{educator.name}</p>
-                        {isFounderEmail(educator.email) ? (
+                        {Boolean(educator.founder) ? (
                           <span className="rounded bg-navy px-1.5 py-0.2 font-mono text-[9px] font-bold text-white">
                             FOUNDER
                           </span>
