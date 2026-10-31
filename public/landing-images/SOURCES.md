@@ -34,3 +34,24 @@ WebP sizes (`-800`, `-1400`, `-2000` where the original is large enough).
 
 The Pexels License does not allow selling unaltered copies of the photos or implying that the
 people shown endorse Coursify.
+
+## library-gauteng
+
+- Source: https://www.pexels.com/photo/spacious-library-interior-with-wooden-bookshelves-35544942/
+- Photographer: Elaine Krige
+- Location: Gauteng, South Africa
+- Licence: Pexels License
+
+## cape-town-table-mountain
+
+- Source: https://www.pexels.com/photo/cityscape-with-table-mountain-in-cape-town-38238589/
+- Photographer: Magda Ehlers
+- Location: Cape Town, South Africa
+- Licence: Pexels License
+
+## school-football
+
+- Source: https://www.pexels.com/photo/children-play-football-in-south-africa-32422417/
+- Photographer: Thato Moiketsi
+- Location: South Africa
+- Licence: Pexels License

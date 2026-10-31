@@ -36,6 +36,17 @@ service cloud.firestore {
       return !(key in data) || data[key] is bool;
     }
 
+    // Links people can click must be web addresses; never javascript: or other schemes.
+    function optWebUrl(data, key, max) {
+      return optString(data, key, max) && (!(key in data) || data[key] == '' || data[key].matches('(?i)https?://.+'));
+    }
+
+    // Chat attachments are web addresses or small inline media (never an HTML or script data: URL).
+    function optAttachmentUrl(data, key, max) {
+      return optString(data, key, max)
+        && (!(key in data) || data[key].matches('(?is)(https?://|data:(image|audio|video|application)/).+'));
+    }
+
     function optNumber(data, key) {
       return !(key in data) || data[key] is number;
     }
@@ -175,11 +186,11 @@ service cloud.firestore {
         && optString(data, 'fileSize', 20)
         && optNumber(data, 'fileBytes')
         && optString(data, 'fileData', 900000)
-        && optString(data, 'fileUrl', 2000)
+        && optWebUrl(data, 'fileUrl', 2000)
         && optString(data, 'storagePath', 400)
         && optBool(data, 'localOnly')
         && optBool(data, 'hasFile')
-        && optString(data, 'sourceUrl', 500)
+        && optWebUrl(data, 'sourceUrl', 500)
         && optString(data, 'createdAt', 40)
         && (!('slides' in data) || (data.slides is list && data.slides.size() <= 200));
     }
@@ -299,7 +310,7 @@ service cloud.firestore {
         ])
         && optString(incoming(), 'body', 5000)
         && optString(incoming(), 'createdAt', 40)
-        && optString(incoming(), 'attachmentUrl', 950000)
+        && optAttachmentUrl(incoming(), 'attachmentUrl', 950000)
         && optString(incoming(), 'attachmentName', 200)
         && optString(incoming(), 'attachmentType', 120)
         && optString(incoming(), 'attachmentSize', 30);
@@ -322,7 +333,7 @@ service cloud.firestore {
         && data.format in ['in-person', 'online']
         && optString(data, 'startsAt', 40)
         && optString(data, 'location', 240)
-        && optString(data, 'meetingUrl', 500)
+        && optWebUrl(data, 'meetingUrl', 500)
         && data.rsvpIds is list && data.rsvpIds.size() <= 1000;
     }
 

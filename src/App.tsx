@@ -4,6 +4,7 @@ import AuthScreen from "@/components/auth-screen"
 import CookieConsent from "@/components/cookie-consent"
 import LegalPage, { legalDocFromPath } from "@/components/legal-page"
 import Dashboard from "@/components/dashboard"
+import ErrorBoundary from "@/components/error-boundary"
 import DirectoryView from "@/components/directory-view"
 import Landing from "@/components/landing"
 import Header from "@/components/header"
@@ -247,6 +248,7 @@ function Workspace() {
           <Sidebar view={view} onNavigate={goNav} />
         </aside>
 
+        <ErrorBoundary resetKey={`${view}:${profileId ?? ""}`}>
         {view === "dashboard" ? (
           <Dashboard
             query={query}
@@ -277,6 +279,7 @@ function Workspace() {
             onMessage={goMessages}
           />
         ) : null}
+        </ErrorBoundary>
       </div>
 
       {menuOpen ? (

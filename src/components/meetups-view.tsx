@@ -3,7 +3,7 @@ import Icons from "@/components/icons"
 import MeetupModal from "@/components/meetup-modal"
 import { VERIFIED_ONLY, useApp } from "@/store"
 import type { Meetup } from "@/types"
-import { isUpcomingEvent, mapsEmbedUrl, mapsSearchUrl, meetingProvider } from "@/utils"
+import { isHttpUrl, isUpcomingEvent, mapsEmbedUrl, mapsSearchUrl, meetingProvider } from "@/utils"
 import { useMemo, useState } from "react"
 
 type EventFilter = "upcoming" | "in-person" | "online" | "going" | "hosting"
@@ -385,7 +385,7 @@ function MeetupCard({ event, onAuthor }: { event: Meetup; onAuthor: (id: string)
             ) : (
               <span className="text-[13px] text-muted">This meetup has ended</span>
             )}
-            {online && upcoming && (going || isHost) && event.meetingUrl ? (
+            {online && upcoming && (going || isHost) && event.meetingUrl && isHttpUrl(event.meetingUrl) ? (
               <a
                 href={event.meetingUrl}
                 target="_blank"

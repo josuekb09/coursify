@@ -16,6 +16,8 @@ const photos = {
   planning: { name: "classroom-gauteng", widths: [800, 1400, 2000] },
   workshop: { name: "pretoria-assembly", widths: [800, 1400, 2000] },
   mission: { name: "free-state-outdoor-class", widths: [800, 1400, 2000] },
+  playground: { name: "school-football", widths: [800, 1400, 2000] },
+  capeTown: { name: "cape-town-table-mountain", widths: [800, 1400, 2000] },
 } satisfies Record<string, PhotoAsset>
 
 const nav = [
@@ -472,6 +474,20 @@ export default function Landing({ onSignIn, onGetStarted }: { onSignIn: () => vo
                 </Reveal>
               ))}
             </div>
+            <Reveal className="mt-4">
+              <div className="relative overflow-hidden rounded-3xl">
+                <Photo
+                  src={photos.playground}
+                  alt="Learners playing football on a school field in South Africa"
+                  className="aspect-[16/9] w-full sm:aspect-[21/8]"
+                  sizes="(min-width: 1152px) 1152px, 100vw"
+                />
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0d1628]/80 via-transparent to-transparent" />
+                <p className="absolute inset-x-5 bottom-5 max-w-lg font-display text-[18px] font-bold leading-snug text-white sm:inset-x-8 sm:bottom-7 sm:text-[22px]">
+                  Less time rebuilding worksheets means more time out here with your learners.
+                </p>
+              </div>
+            </Reveal>
           </div>
         </section>
 
@@ -656,6 +672,39 @@ export default function Landing({ onSignIn, onGetStarted }: { onSignIn: () => vo
         </section>
       </main>
 
+      {/* ── Closing call to action ── */}
+      <section className="relative isolate overflow-hidden">
+        <div className="absolute inset-0 -z-10">
+          <Photo src={photos.capeTown} alt="Cape Town beneath Table Mountain" className="h-full w-full" sizes="100vw" />
+        </div>
+        <div className="absolute inset-0 -z-10 bg-gradient-to-r from-[#0d1628]/95 via-[#0d1628]/80 to-[#0d1628]/40" aria-hidden="true" />
+        <div className="mx-auto max-w-6xl px-5 py-24 text-white sm:px-6 lg:py-32">
+          <Reveal>
+            <p className="text-[13px] font-semibold text-white/60">From Limpopo to the Cape</p>
+            <h2 className="mt-3 max-w-2xl font-display text-[clamp(2rem,4.5vw,3.2rem)] font-bold leading-[1.05] tracking-[-0.04em] text-balance">
+              Bring your best lesson. Leave with a staffroom that spans the country.
+            </h2>
+            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={onGetStarted}
+                className="group inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-white px-6 text-[15px] font-semibold text-navy transition-colors hover:bg-navy-soft"
+              >
+                Join as a teacher
+                <Icons.ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              </button>
+              <button
+                type="button"
+                onClick={onSignIn}
+                className="inline-flex h-12 items-center justify-center rounded-xl border border-white/30 px-6 text-[15px] font-semibold text-white backdrop-blur transition-colors hover:bg-white/10"
+              >
+                Sign in
+              </button>
+            </div>
+          </Reveal>
+        </div>
+      </section>
+
       <footer className="bg-[#0d1628] text-white/60">
         <div className="mx-auto max-w-6xl px-5 pb-10 pt-16 sm:px-6">
           <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_repeat(2,minmax(0,1fr))]">
@@ -711,7 +760,7 @@ export default function Landing({ onSignIn, onGetStarted }: { onSignIn: () => vo
           <div className="mt-14 flex flex-col gap-2 border-t border-white/10 pt-6 text-[12.5px] text-white/40 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1">
               <p>© {new Date().getFullYear()} Coursify. Built for South African classrooms.</p>
-              <p className="text-white/30">Photos taken in South Africa by Thabang Thamano, Vincent Peters, Jørgen Larsen (Pexels) and USAID.</p>
+              <p className="text-white/30">Photos taken in South Africa by Thabang Thamano, Vincent Peters, Jørgen Larsen, Thato Moiketsi, Magda Ehlers, Elaine Krige (Pexels) and USAID.</p>
             </div>
             <nav aria-label="Legal" className="flex flex-wrap gap-x-5 gap-y-1">
               <a href="/privacy" className="hover:text-white">Privacy</a>

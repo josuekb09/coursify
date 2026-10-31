@@ -171,6 +171,23 @@ await check("app meetup payload is accepted", () =>
     startsAt: "2026-11-10T10:00:00Z", location: "Durban", rsvpIds: ["bob"], createdAt: "now",
   })))
 
+await check("meetup link cannot be a javascript: URL", () =>
+  assertFails(setDoc(doc(db(bob), "events/e3"), {
+    title: "x", hostId: "bob", format: "online", meetingUrl: "javascript:alert(1)", rsvpIds: ["bob"],
+  })))
+await check("resource link cannot be a javascript: URL", () =>
+  assertFails(setDoc(doc(db(alice), "resources/bad"), { title: "x", authorId: "alice", downloads: 0, saves: 0, sourceUrl: "javascript:alert(1)" })))
+await check("chat attachment cannot be an HTML data: URL", () =>
+  assertFails(setDoc(doc(db(bob), "messages/m4"), {
+    conversationId: "alice:bob", senderId: "bob", participantIds: ["alice", "bob"], body: "x",
+    attachmentUrl: "data:text/html;base64,PHNjcmlwdD4=",
+  })))
+await check("chat image as data: URL is fine", () =>
+  assertSucceeds(setDoc(doc(db(bob), "messages/m5"), {
+    conversationId: "alice:bob", senderId: "bob", participantIds: ["alice", "bob"], body: "x",
+    attachmentUrl: "data:image/png;base64,iVBORw0KGgo=",
+  })))
+
 console.log("Storage")
 const bytes = new Uint8Array(1024)
 await check("uploads a PDF to own folder", () =>

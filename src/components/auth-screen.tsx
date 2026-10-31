@@ -78,13 +78,25 @@ export default function AuthScreen({
   return (
     <div className="grid min-h-dvh bg-[#f5f5f5] lg:grid-cols-2">
       <aside className="relative hidden flex-col justify-between overflow-hidden bg-navy p-10 text-white lg:flex xl:p-14">
+        {/* A school library in Gauteng (Pexels licence, see public/landing-images/SOURCES.md). */}
+        <picture className="pointer-events-none absolute inset-0" aria-hidden="true">
+          <source
+            type="image/webp"
+            srcSet="/landing-images/library-gauteng-800.webp 800w, /landing-images/library-gauteng-1400.webp 1400w"
+            sizes="50vw"
+          />
+          <img src="/landing-images/library-gauteng.jpg" alt="" className="h-full w-full object-cover" />
+        </picture>
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-navy/80 via-navy/70 to-navy/95" aria-hidden="true" />
         <div
-          className="pointer-events-none absolute -right-16 -bottom-10 h-[420px] w-[420px] opacity-[0.1]"
+          className="pointer-events-none absolute -right-16 -bottom-10 h-[420px] w-[420px] opacity-[0.08]"
           aria-hidden="true"
         >
           <CoursifyMark className="h-full w-full [&_path]:!fill-white" />
         </div>
-        <Logo light />
+        <div className="relative">
+          <Logo light />
+        </div>
         <div className="relative max-w-md">
           <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-white/50">
             Educator workspace
@@ -93,12 +105,12 @@ export default function AuthScreen({
             No teacher should ever have to start from a blank page.
           </h1>
           <p className="mt-5 text-[15px] leading-relaxed text-white/70">
-            Coursify is a professional home for curriculum. High school and university educators
-            can join with any valid email address.
+            Coursify is a professional home for curriculum. Anyone can join to learn from colleagues;
+            teachers verified with SACE share resources and host meetups.
           </p>
         </div>
         <p className="relative font-mono text-[11px] uppercase tracking-[0.14em] text-white/40">
-          Verified educators only
+          Made in South Africa, for South African teachers
         </p>
       </aside>
 
