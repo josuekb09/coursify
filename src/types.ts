@@ -44,6 +44,17 @@ export type Educator = {
   lastActiveAt?: string
 }
 
+export type VerificationRequest = {
+  uid: string
+  name: string
+  saceNumber: string
+  school: string
+  status: "pending" | "approved" | "rejected"
+  submittedAt: string
+  reviewedAt?: string
+  note?: string
+}
+
 export type Slide = {
   title: string
   subtitle: string

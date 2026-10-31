@@ -77,14 +77,32 @@ await check("bio length is capped", () => assertFails(updateDoc(doc(db(alice), "
 await check("legacy profile stays editable", () => assertSucceeds(updateDoc(doc(db(alice), "educators/alice"), { lastActiveAt: "2026-10-31T00:00:00Z" })))
 await check("legacy email can be removed", () => assertSucceeds(updateDoc(doc(db(alice), "educators/alice"), { email: deleteField() })))
 await check("cannot edit someone else's profile", () => assertFails(updateDoc(doc(db(bob), "educators/alice"), { bio: "hacked" })))
-await check("cannot self-verify without evidence", () =>
-  assertFails(updateDoc(doc(db(bob), "educators/bob"), { verified: true, badgeClaimed: true })))
-await check("cannot verify with someone else's resources", () =>
-  assertFails(updateDoc(doc(db(bob), "educators/bob"), { verified: true, badgeClaimed: true, badgeEvidence: ["r1", "r2", "r3"] })))
-await check("cannot verify with a repeated resource", () =>
-  assertFails(updateDoc(doc(db(alice), "educators/alice"), { verified: true, badgeClaimed: true, badgeEvidence: ["r1", "r1", "r2"] })))
-await check("earns the badge with three own resources", () =>
-  assertSucceeds(updateDoc(doc(db(alice), "educators/alice"), { verified: true, badgeClaimed: true, badgeClaimedAt: "now", badgeEvidence: ["r1", "r2", "r3"] })))
+await check("cannot self-verify", () =>
+  assertFails(updateDoc(doc(db(alice), "educators/alice"), { verified: true, badgeClaimed: true })))
+const verifiedAlice = env.authenticatedContext("alice", { email: "alice@school.za", email_verified: true })
+await check("unverified member cannot publish a resource", () =>
+  assertFails(setDoc(doc(db(alice), "resources/new1"), { title: "x", authorId: "alice", downloads: 0, saves: 0 })))
+await check("unverified member cannot host a meetup", () =>
+  assertFails(setDoc(doc(db(alice), "events/new1"), { title: "x", hostId: "alice", format: "online", rsvpIds: ["alice"] })))
+await check("verification request needs a confirmed email", () =>
+  assertFails(setDoc(doc(db(alice), "verificationRequests/alice"), { saceNumber: "12345678", school: "Hoërskool", status: "pending" })))
+await check("cannot request as approved", () =>
+  assertFails(setDoc(doc(db(verifiedAlice), "verificationRequests/alice"), { saceNumber: "12345678", school: "Hoërskool", status: "approved" })))
+await check("SACE number must be digits", () =>
+  assertFails(setDoc(doc(db(verifiedAlice), "verificationRequests/alice"), { saceNumber: "abc", school: "Hoërskool", status: "pending" })))
+await check("sends a verification request", () =>
+  assertSucceeds(setDoc(doc(db(verifiedAlice), "verificationRequests/alice"), { saceNumber: "12345678", school: "Hoërskool", name: "Alice", status: "pending", submittedAt: "now" })))
+await check("others cannot read a request", () => assertFails(getDoc(doc(db(bob), "verificationRequests/alice"))))
+await check("member cannot approve own request", () =>
+  assertFails(updateDoc(doc(db(verifiedAlice), "verificationRequests/alice"), { status: "approved" })))
+await check("founder approves the request", () =>
+  assertSucceeds(updateDoc(doc(db(founder), "verificationRequests/alice"), { status: "approved", reviewedAt: "now", note: "" })))
+await check("founder grants the badge", () =>
+  assertSucceeds(updateDoc(doc(db(founder), "educators/alice"), { verified: true, badgeClaimed: true })))
+await check("verified teacher publishes a resource", () =>
+  assertSucceeds(setDoc(doc(db(alice), "resources/new1"), { title: "x", authorId: "alice", downloads: 0, saves: 0 })))
+await check("verified teacher cannot remove own badge flag games", () =>
+  assertFails(updateDoc(doc(db(alice), "educators/alice"), { badgeClaimedAt: "forever" })))
 await check("founder can verify anyone", () => assertSucceeds(updateDoc(doc(db(founder), "educators/bob"), { verified: true })))
 
 await check("download counter only moves by one", () => assertFails(updateDoc(doc(db(bob), "resources/r1"), { downloads: 9999 })))

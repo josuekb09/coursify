@@ -1,7 +1,7 @@
 import Avatar from "@/components/avatar"
 import Icons from "@/components/icons"
 import MeetupModal from "@/components/meetup-modal"
-import { useApp } from "@/store"
+import { VERIFIED_ONLY, useApp } from "@/store"
 import type { Meetup } from "@/types"
 import { isUpcomingEvent, mapsEmbedUrl, mapsSearchUrl, meetingProvider } from "@/utils"
 import { useMemo, useState } from "react"
@@ -25,9 +25,17 @@ const emptyCopy: Record<EventFilter, { title: string; body: string }> = {
 }
 
 export default function MeetupsView({ query, onAuthor }: { query: string; onAuthor: (id: string) => void }) {
-  const { currentUser, events, authorName } = useApp()
+  const { currentUser, events, authorName, isFounder, notify } = useApp()
   const [filter, setFilter] = useState<EventFilter>("upcoming")
-  const [creating, setCreating] = useState(false)
+  const [creating, setCreatingRaw] = useState(false)
+  const setCreating = (next: boolean) => {
+    if (next && !currentUser?.verified && !isFounder) {
+      notify(VERIFIED_ONLY)
+      window.scrollTo({ top: 0 })
+      return
+    }
+    setCreatingRaw(next)
+  }
   const me = currentUser?.id ?? ""
   const needle = query.trim().toLowerCase()
 

@@ -3,7 +3,8 @@ import Icons from "@/components/icons"
 import { FOUNDER_EMAIL, isFounderEmail } from "@/security"
 import { useApp } from "@/store"
 import { formatBytes } from "@/utils"
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
+import type { VerificationRequest } from "@/types"
 
 function formatDate(value: string) {
   const date = new Date(value)
@@ -180,10 +181,12 @@ export default function AdminAnalyticsView() {
             {stats.verifiedCount}
           </p>
           <div className="mt-2 flex items-center gap-2 font-mono text-[11px] text-muted">
-            <span>{stats.totalEducators - stats.verifiedCount} pending merit criteria</span>
+            <span>{stats.totalEducators - stats.verifiedCount} not verified yet</span>
           </div>
         </article>
       </section>
+
+      <VerificationQueue />
 
       {/* Breakdown grids */}
       <section className="mt-8 grid gap-6 lg:grid-cols-3">
@@ -267,9 +270,10 @@ export default function AdminAnalyticsView() {
                       </p>
                     </div>
                   </div>
-                  <time className="shrink-0 font-mono text-[11px] text-muted">
-                    {formatDate(educator.createdAt)}
-                  </time>
+                  <div className="flex shrink-0 items-center gap-3">
+                    {educator.verified && !educator.founder ? <RevokeButton uid={educator.id} name={educator.name} /> : null}
+                    <time className="font-mono text-[11px] text-muted">{formatDate(educator.createdAt)}</time>
+                  </div>
                 </div>
               ))}
             </div>
@@ -310,5 +314,136 @@ export default function AdminAnalyticsView() {
         )}
       </section>
     </main>
+  )
+}
+
+function RevokeButton({ uid, name }: { uid: string; name: string }) {
+  const { revokeVerification, notify } = useApp()
+  const [confirming, setConfirming] = useState(false)
+  if (!confirming) {
+    return (
+      <button type="button" onClick={() => setConfirming(true)} className="text-[11px] font-semibold text-muted hover:text-[#8a3b32]">
+        Remove badge
+      </button>
+    )
+  }
+  return (
+    <span className="flex items-center gap-2 text-[11px]">
+      <span className="text-muted">Remove {name.split(" ")[0]}&apos;s badge?</span>
+      <button
+        type="button"
+        onClick={async () => {
+          const error = await revokeVerification(uid)
+          if (error) notify(error)
+          setConfirming(false)
+        }}
+        className="font-semibold text-[#8a3b32]"
+      >
+        Yes
+      </button>
+      <button type="button" onClick={() => setConfirming(false)} className="font-semibold text-muted">
+        No
+      </button>
+    </span>
+  )
+}
+
+const STATUS_STYLE: Record<VerificationRequest["status"], string> = {
+  pending: "bg-warn-soft text-warn",
+  approved: "bg-emerald-100 text-emerald-800",
+  rejected: "bg-[#fbeeec] text-[#8a3b32]",
+}
+
+/** SACE verification requests. Check the number on the SACE register, then approve or decline. */
+function VerificationQueue() {
+  const { verificationQueue, reviewVerification, notify } = useApp()
+  const [busy, setBusy] = useState<string | null>(null)
+  const [notes, setNotes] = useState<Record<string, string>>({})
+  const pending = verificationQueue.filter((item) => item.status === "pending")
+  const recent = verificationQueue.filter((item) => item.status !== "pending").slice(0, 6)
+
+  async function decide(item: VerificationRequest, decision: "approved" | "rejected") {
+    setBusy(item.uid)
+    const error = await reviewVerification(item.uid, decision, notes[item.uid])
+    setBusy(null)
+    if (error) notify(error)
+  }
+
+  return (
+    <section className="mt-8 rounded-2xl border border-line bg-surface p-6 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-display text-[16px] font-bold text-ink">Teacher verification</h2>
+          <p className="mt-0.5 text-xs text-muted">
+            Look up each SACE number on the{" "}
+            <a href="https://www.sace.org.za" target="_blank" rel="noopener noreferrer" className="font-semibold text-navy underline">
+              SACE register
+            </a>{" "}
+            and check the name matches before approving.
+          </p>
+        </div>
+        <span className="rounded-full bg-navy-soft px-2.5 py-1 font-mono text-[11px] font-semibold text-navy">
+          {pending.length} waiting
+        </span>
+      </div>
+
+      {pending.length ? (
+        <div className="mt-5 divide-y divide-line overflow-hidden rounded-xl border border-line">
+          {pending.map((item) => (
+            <div key={item.uid} className="grid gap-3 bg-canvas/40 px-4 py-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-center">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-ink">{item.name || "Unnamed member"}</p>
+                <p className="truncate text-[12px] text-muted">{item.school}</p>
+                <p className="mt-0.5 font-mono text-[12px] text-ink">SACE {item.saceNumber}</p>
+              </div>
+              <input
+                value={notes[item.uid] ?? ""}
+                onChange={(event) => setNotes({ ...notes, [item.uid]: event.target.value })}
+                placeholder="Note shown if you decline (optional)"
+                className="h-9 w-full rounded-lg border border-line bg-surface px-3 text-[13px] outline-none focus:border-navy"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={busy === item.uid}
+                  onClick={() => decide(item, "approved")}
+                  className="h-9 rounded-lg bg-navy px-3.5 text-[13px] font-semibold text-white hover:bg-navy-hover disabled:opacity-60"
+                >
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  disabled={busy === item.uid}
+                  onClick={() => decide(item, "rejected")}
+                  className="h-9 rounded-lg border border-line px-3.5 text-[13px] font-semibold text-ink hover:border-line-strong disabled:opacity-60"
+                >
+                  Decline
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-5 text-sm text-muted">No requests waiting. New ones appear here in real time.</p>
+      )}
+
+      {recent.length ? (
+        <div className="mt-5">
+          <h3 className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted">Recently reviewed</h3>
+          <ul className="mt-2 space-y-1.5 text-[13px]">
+            {recent.map((item) => (
+              <li key={item.uid} className="flex items-center justify-between gap-3">
+                <span className="truncate text-ink">
+                  {item.name} <span className="font-mono text-muted">· SACE {item.saceNumber}</span>
+                </span>
+                <span className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase ${STATUS_STYLE[item.status]}`}>
+                  {item.status}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </section>
   )
 }

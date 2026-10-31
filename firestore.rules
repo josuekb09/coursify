@@ -40,8 +40,10 @@ service cloud.firestore {
       return !(key in data) || data[key] is number;
     }
 
-    function ownsResource(id) {
-      return get(/databases/$(database)/documents/resources/$(id)).data.authorId == request.auth.uid;
+    // Only teachers whose SACE registration the founder confirmed may publish.
+    function verifiedTeacher() {
+      return isFounder()
+        || get(/databases/$(database)/documents/educators/$(request.auth.uid)).data.get('verified', false) == true;
     }
 
     // ─── Public metadata ─────────────────────────────────────────────────────────────
@@ -70,6 +72,25 @@ service cloud.firestore {
         && optString(incoming(), 'acceptedTermsAt', 40)
         && optString(incoming(), 'acceptedTermsVersion', 20);
       allow delete: if signedIn() && request.auth.uid == userId;
+    }
+
+    // ─── Teacher verification requests (SACE number), reviewed by the founder ─────────
+
+    match /verificationRequests/{userId} {
+      allow read: if signedIn() && (request.auth.uid == userId || isFounder());
+      allow create, update: if signedIn() && request.auth.uid == userId
+        && request.auth.token.email_verified == true
+        && incoming().keys().hasOnly(['saceNumber', 'school', 'name', 'status', 'submittedAt'])
+        && incoming().status == 'pending'
+        && incoming().saceNumber is string && incoming().saceNumber.matches('[0-9]{5,12}')
+        && reqString(incoming(), 'school', 3, 120)
+        && optString(incoming(), 'name', 80)
+        && optString(incoming(), 'submittedAt', 40);
+      allow update: if isFounder()
+        && changed().hasOnly(['status', 'reviewedAt', 'note'])
+        && incoming().status in ['approved', 'rejected']
+        && optString(incoming(), 'note', 300);
+      allow delete: if signedIn() && (request.auth.uid == userId || isFounder());
     }
 
     // ─── Public educator profiles ─────────────────────────────────────────────────────
@@ -105,19 +126,6 @@ service cloud.firestore {
         && (!('founder' in data) || data.founder == false || isFounder());
     }
 
-    // The verified badge is earned: a complete profile plus three resources this user authored.
-    function earnedBadge() {
-      let ev = incoming().badgeEvidence;
-      return existing().get('verified', false) == false
-        && incoming().verified == true
-        && incoming().badgeClaimed == true
-        && changed().hasOnly(['verified', 'badgeClaimed', 'badgeClaimedAt', 'badgeEvidence'])
-        && existing().get('bio', '').size() > 0
-        && existing().get('school', '').size() > 0
-        && ev is list && ev.size() == 3 && ev.toSet().size() == 3
-        && ownsResource(ev[0]) && ownsResource(ev[1]) && ownsResource(ev[2]);
-    }
-
     match /educators/{userId} {
       allow read: if signedIn();
       allow create: if signedIn() && request.auth.uid == userId
@@ -139,7 +147,6 @@ service cloud.firestore {
               && incoming().get('badgeClaimed', false) == existing().get('badgeClaimed', false)
               && !changed().hasAny(['badgeEvidence', 'badgeClaimedAt'])
             )
-            || earnedBadge()
           )
         )
       );
@@ -181,6 +188,7 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create: if signedIn()
         && incoming().authorId == request.auth.uid
+        && verifiedTeacher()
         && incoming().keys().hasOnly(resourceKeys())
         && validResource(incoming())
         && incoming().get('downloads', 0) == 0
@@ -322,6 +330,7 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create: if signedIn()
         && incoming().hostId == request.auth.uid
+        && verifiedTeacher()
         && incoming().keys().hasOnly(eventKeys())
         && validEvent(incoming())
         && incoming().rsvpIds == [request.auth.uid];

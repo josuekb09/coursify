@@ -17,6 +17,7 @@ import {
   normalizeEmail,
 } from "@/security"
 import type {
+  VerificationRequest,
   ChatAttachment,
   ChatMessage,
   Conversation,
@@ -119,7 +120,10 @@ type AppStore = {
   events: Meetup[]
   currentUser: Educator | null
   isFounder: boolean
-  badgeEligible: boolean
+  /** The signed-in user's own SACE verification request, if any. */
+  verificationRequest: VerificationRequest | null
+  /** Founder only: every request, newest first. */
+  verificationQueue: VerificationRequest[]
   signedIn: boolean
   hasAccounts: boolean
   myResources: Resource[]
@@ -137,7 +141,9 @@ type AppStore = {
   logout: () => void
   deleteAccount: (password: string) => Promise<string | null>
   updateProfile: (patch: ProfilePatch) => Promise<string | null>
-  claimVerifiedBadge: () => Promise<string | null>
+  requestVerification: (input: { saceNumber: string; school: string }) => Promise<string | null>
+  reviewVerification: (uid: string, decision: "approved" | "rejected", note?: string) => Promise<string | null>
+  revokeVerification: (uid: string) => Promise<string | null>
   uploadResource: (
     input: UploadInput,
     onProgress?: (progress: number) => void,
@@ -181,6 +187,20 @@ function asRecord(value: unknown) {
 
 function compact<T extends Record<string, unknown>>(value: T) {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T
+}
+
+function toVerificationRequest(uid: string, data: Record<string, unknown>): VerificationRequest {
+  const status = data.status === "approved" || data.status === "rejected" ? data.status : "pending"
+  return {
+    uid,
+    name: String(data.name ?? ""),
+    saceNumber: String(data.saceNumber ?? ""),
+    school: String(data.school ?? ""),
+    status,
+    submittedAt: String(data.submittedAt ?? ""),
+    reviewedAt: typeof data.reviewedAt === "string" ? data.reviewedAt : undefined,
+    note: typeof data.note === "string" && data.note ? data.note : undefined,
+  }
 }
 
 function toEducator(id: string, data: Record<string, unknown>): Educator {
@@ -723,6 +743,9 @@ function contentTypeFor(file: File) {
 // Firestore documents are capped at 1 MiB, so only small files can travel inside one.
 const INLINE_FILE_LIMIT = 650_000
 
+export const VERIFIED_ONLY =
+  "Only verified teachers can share resources and host meetups. Send your SACE number from the banner at the top of the page."
+
 export const TERMS_VERSION = "2026-10-31"
 
 /** Length beats complexity, but a password made of one character class is too easy to guess. */
@@ -735,12 +758,6 @@ export function passwordIssue(password: string) {
   return null
 }
 
-function badgeEvidenceFor(resources: Resource[], authorId: string) {
-  return resources
-    .filter((resource) => resource.authorId === authorId)
-    .slice(0, 3)
-    .map((resource) => resource.id)
-}
 
 const migratedProfiles = new Set<string>()
 
@@ -787,7 +804,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
     setToasts((current) => [...current, { id, message }])
     window.setTimeout(() => {
       setToasts((current) => current.filter((toast) => toast.id !== id))
-    }, 2800)
+    }, Math.min(8000, Math.max(2800, message.length * 55)))
   }, [])
 
   const currentUser = useMemo(() => {
@@ -830,15 +847,112 @@ export default function AppProvider({ children }: { children: ReactNode }) {
           ),
     [accountEmails, educators],
   )
-  const badgeEligible = Boolean(
-    currentUser &&
-      !currentUser.verified &&
-      currentUser.name.trim() &&
-      currentUser.bio.trim() &&
-      currentUser.school.trim() &&
-      currentUser.subject.trim() &&
-      currentUser.institutionLevel &&
-      resources.filter((resource) => resource.authorId === currentUser.id).length >= 3,
+
+  // ─── Teacher verification (SACE number, approved by the founder) ──────────────────────
+  const [verificationRequest, setVerificationRequest] = useState<VerificationRequest | null>(null)
+  const [verificationQueue, setVerificationQueue] = useState<VerificationRequest[]>([])
+
+  useEffect(() => {
+    if (!authUser?.uid || !isFirebaseConfigured()) {
+      setVerificationRequest(null)
+      return
+    }
+    return onSnapshot(
+      doc(getFirebaseDb(), "verificationRequests", authUser.uid),
+      (snap) => setVerificationRequest(snap.exists() ? toVerificationRequest(snap.id, asRecord(snap.data())) : null),
+      () => undefined,
+    )
+  }, [authUser?.uid])
+
+  useEffect(() => {
+    if (!isFounder || !isFirebaseConfigured()) {
+      setVerificationQueue([])
+      return
+    }
+    return onSnapshot(
+      collection(getFirebaseDb(), "verificationRequests"),
+      (snap) =>
+        setVerificationQueue(
+          snap.docs
+            .map((item) => toVerificationRequest(item.id, asRecord(item.data())))
+            .sort((a, b) => (a.submittedAt < b.submittedAt ? 1 : -1)),
+        ),
+      () => undefined,
+    )
+  }, [isFounder])
+
+  const requestVerification = useCallback(
+    async (input: { saceNumber: string; school: string }) => {
+      if (!authUser) return "Sign in first."
+      const saceNumber = input.saceNumber.replace(/\s+/g, "")
+      const school = sanitizePlainText(input.school, 120)
+      if (!/^\d{5,12}$/.test(saceNumber)) return "Enter your SACE registration number (digits only)."
+      if (school.length < 3) return "Enter the name of the school where you teach."
+      if (!authUser.emailVerified) return "Confirm your email address first, then send your request."
+      try {
+        await timedWrite(
+          setDoc(doc(getFirebaseDb(), "verificationRequests", authUser.uid), {
+            saceNumber,
+            school,
+            name: currentUser?.name ?? "",
+            status: "pending",
+            submittedAt: new Date().toISOString(),
+          }),
+        )
+        notify("Thanks! Your request is with the Coursify team.")
+        return null
+      } catch (error) {
+        return firebaseErrorMessage(error)
+      }
+    },
+    [authUser, currentUser?.name, notify],
+  )
+
+  const reviewVerification = useCallback(
+    async (uid: string, decision: "approved" | "rejected", note?: string) => {
+      if (!isFounder) return "Only the Coursify team can review requests."
+      const db = getFirebaseDb()
+      const now = new Date().toISOString()
+      try {
+        const batch = writeBatch(db)
+        batch.update(doc(db, "verificationRequests", uid), {
+          status: decision,
+          reviewedAt: now,
+          note: sanitizePlainText(note ?? "", 300),
+        })
+        batch.update(doc(db, "educators", uid), {
+          verified: decision === "approved",
+          badgeClaimed: decision === "approved",
+          badgeClaimedAt: decision === "approved" ? now : deleteField(),
+        })
+        await timedWrite(batch.commit())
+        notify(decision === "approved" ? "Teacher verified." : "Request declined.")
+        return null
+      } catch (error) {
+        return firebaseErrorMessage(error)
+      }
+    },
+    [isFounder, notify],
+  )
+
+  const revokeVerification = useCallback(
+    async (uid: string) => {
+      if (!isFounder) return "Only the Coursify team can change badges."
+      try {
+        await timedWrite(
+          updateDoc(doc(getFirebaseDb(), "educators", uid), {
+            verified: false,
+            badgeClaimed: false,
+            badgeClaimedAt: deleteField(),
+          }),
+        )
+        notify("Badge removed.")
+        return null
+      } catch (error) {
+        return firebaseErrorMessage(error)
+      }
+    },
+    [isFounder, notify],
   )
 
   function rememberProfile(profile: Educator) {
@@ -1093,31 +1207,6 @@ export default function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [authUser?.uid])
 
-  // Automatically award badge when user meets merit criteria
-  useEffect(() => {
-    if (!authUser?.uid || !currentUser) return
-    if (currentUser.verified || currentUser.badgeClaimed) return
-    if (badgeEligible) {
-      void (async () => {
-        try {
-          await updateDoc(doc(getFirebaseDb(), "educators", authUser.uid), {
-            verified: true,
-            badgeClaimed: true,
-            badgeClaimedAt: new Date().toISOString(),
-            badgeEvidence: badgeEvidenceFor(resources, authUser.uid),
-          })
-          rememberProfile({
-            ...currentUser,
-            verified: true,
-            badgeClaimed: true,
-          })
-          notify("Congratulations! You've unlocked the Verified Educator Badge.")
-        } catch {
-          /* ignore */
-        }
-      })()
-    }
-  }, [authUser?.uid, badgeEligible, currentUser, notify, resources])
 
   const login = useCallback(async (email: string, password: string) => {
     if (!isFirebaseConfigured()) {
@@ -1371,50 +1460,6 @@ export default function AppProvider({ children }: { children: ReactNode }) {
     [authUser, currentUser, notify],
   )
 
-  const claimVerifiedBadge = useCallback(async () => {
-    if (!authUser || !currentUser) return "Sign in to claim a badge."
-    const userResources = resources.filter((resource) => resource.authorId === currentUser.id)
-    const hasCompleteProfile = Boolean(
-      currentUser.name.trim() &&
-        currentUser.bio.trim() &&
-        currentUser.school.trim() &&
-        currentUser.subject.trim() &&
-        currentUser.institutionLevel,
-    )
-    const eligible =
-      isFounderEmail(currentUser.email) ||
-      (hasCompleteProfile && userResources.length >= 3)
-    if (!eligible) {
-      return "Complete your profile (100%) and share at least three curriculum resources to unlock this badge."
-    }
-    try {
-      await timedWrite(
-        updateDoc(doc(getFirebaseDb(), "educators", authUser.uid), {
-          verified: true,
-          badgeClaimed: true,
-          badgeClaimedAt: new Date().toISOString(),
-          badgeEvidence: badgeEvidenceFor(resources, authUser.uid),
-        }),
-        "Could not claim your badge. Please try again.",
-      )
-      rememberProfile({
-        ...currentUser,
-        verified: true,
-        badgeClaimed: true,
-      })
-      notify("Congratulations! You've unlocked the Verified Educator Badge.")
-      return null
-    } catch (error) {
-      return firebaseErrorMessage(error)
-    }
-  }, [authUser, currentUser, notify, resources])
-
-  // Auto-award verified badge if educator meets strict merit criteria
-  useEffect(() => {
-    if (authUser && currentUser && badgeEligible && !currentUser.verified && !currentUser.badgeClaimed) {
-      void claimVerifiedBadge()
-    }
-  }, [authUser, currentUser, badgeEligible, claimVerifiedBadge])
 
   // Throttled real-time presence heartbeat (updates lastActiveAt max once every 60s during active interaction)
   useEffect(() => {
@@ -1474,6 +1519,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
     ): Promise<UploadResult> => {
       const fail = (error: string): UploadResult => ({ error, stored: "none" })
       if (!authUser || !currentUser) return fail("Sign in to upload.")
+      if (!currentUser.verified && !isFounder) return fail(VERIFIED_ONLY)
       const title = sanitizePlainText(input.title, 160)
       if (!title) return fail("Give the resource a title.")
       const issue = uploadIssue({ ...input, sourceUrl: input.sourceUrl ?? "" })
@@ -1585,7 +1631,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
         return { error: firebaseErrorMessage(error), stored: "none" as const }
       }
     },
-    [authUser, currentUser, notify],
+    [authUser, currentUser, isFounder, notify],
   )
 
   const deleteResource = useCallback(
@@ -2000,6 +2046,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
   const createMeetup = useCallback(
     async (input: MeetupInput) => {
       if (!authUser) return "Sign in to host a meetup."
+      if (!currentUser?.verified && !isFounder) return VERIFIED_ONLY
       const title = sanitizePlainText(input.title, 160)
       const description = sanitizePlainText(input.description, 1200)
       if (!title) return "Give the meetup a title."
@@ -2043,7 +2090,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
         return firebaseErrorMessage(error)
       }
     },
-    [authUser, notify],
+    [authUser, currentUser?.verified, isFounder, notify],
   )
 
   const toggleEventRsvp = useCallback(
@@ -2106,7 +2153,8 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       events,
       currentUser,
       isFounder,
-      badgeEligible,
+      verificationRequest,
+      verificationQueue,
       signedIn,
       hasAccounts,
       myResources,
@@ -2121,7 +2169,9 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       logout,
       deleteAccount,
       updateProfile,
-      claimVerifiedBadge,
+      requestVerification,
+      reviewVerification,
+      revokeVerification,
       uploadResource,
       deleteResource,
       downloadResource,
@@ -2156,7 +2206,8 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       createMeetup,
       currentUser,
       isFounder,
-      badgeEligible,
+      verificationRequest,
+      verificationQueue,
       deleteAccount,
       deleteMeetup,
       deleteResource,
@@ -2201,7 +2252,9 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       unreadCount,
       unreadIn,
       updateProfile,
-      claimVerifiedBadge,
+      requestVerification,
+      reviewVerification,
+      revokeVerification,
       uploadResource,
     ],
   )

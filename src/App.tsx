@@ -17,7 +17,7 @@ import ToastViewport from "@/components/toast-viewport"
 import UploadModal from "@/components/upload-modal"
 import UploadsView from "@/components/uploads-view"
 import VerifiedBadgeBanner from "@/components/verified-badge-banner"
-import { useApp } from "@/store"
+import { VERIFIED_ONLY, useApp } from "@/store"
 import type { AuthMode, View } from "@/types"
 
 function EmailVerificationBanner() {
@@ -73,7 +73,7 @@ export default function App() {
 }
 
 function Workspace() {
-  const { currentUser, educatorById, isFounder, live, signedIn, ready } = useApp()
+  const { currentUser, educatorById, isFounder, live, signedIn, ready, notify } = useApp()
   const [view, setView] = useState<View>("dashboard")
   const [profileId, setProfileId] = useState<string | null>(null)
   const [messagePeer, setMessagePeer] = useState<string | null>(null)
@@ -159,6 +159,15 @@ function Workspace() {
   const user = currentUser
   const profile = educatorById(profileId ?? user.id) ?? user
 
+  function openUpload() {
+    if (!user.verified && !isFounder) {
+      notify(VERIFIED_ONLY)
+      window.scrollTo({ top: 0 })
+      return
+    }
+    setUploadOpen(true)
+  }
+
   function goDiscover() {
     setView("discover")
     setMenuOpen(false)
@@ -225,7 +234,7 @@ function Workspace() {
         onDiscover={goDiscover}
         onDashboard={goDashboard}
         onProfile={() => goProfile(user.id)}
-        onUpload={() => setUploadOpen(true)}
+        onUpload={openUpload}
         onMessages={() => goMessages()}
         onOpenMenu={() => setMenuOpen(true)}
       />
@@ -242,7 +251,7 @@ function Workspace() {
           <Dashboard
             query={query}
             onAuthor={goProfile}
-            onUpload={() => setUploadOpen(true)}
+            onUpload={openUpload}
             onDiscover={() => goNav("discover")}
             onMessage={goMessages}
             onSubjects={() => goNav("subjects")}
@@ -264,7 +273,7 @@ function Workspace() {
             educator={profile}
             startEditing={profileEditing}
             onEditingChange={setProfileEditing}
-            onUpload={() => setUploadOpen(true)}
+            onUpload={openUpload}
             onMessage={goMessages}
           />
         ) : null}

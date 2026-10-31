@@ -150,6 +150,18 @@ async function markRead(key, peer, minutesAgo) {
 
 for (const key of Object.keys(people)) await educator(key)
 
+// Only teachers the founder has verified (SACE check) may publish. Pieter stays unverified so the
+// verification banner and the founder's review queue have something to show.
+await signOut(auth).catch(() => undefined)
+try {
+  await createUserWithEmailAndPassword(auth, "kabuyatambwe03@gmail.com", PASSWORD)
+} catch {
+  await signInWithEmailAndPassword(auth, "kabuyatambwe03@gmail.com", PASSWORD)
+}
+for (const key of ["thandi", "sipho", "ayesha"]) {
+  await updateDoc(doc(db, "educators", uids[key]), { verified: true, badgeClaimed: true, badgeClaimedAt: ago(60 * 24 * 7) })
+}
+
 await as("thandi")
 for (const other of ["sipho", "ayesha"]) {
   await setDoc(doc(db, "follows", `${uids.thandi}_${uids[other]}`), { followerId: uids.thandi, followeeId: uids[other], createdAt: ago(900) })
@@ -215,6 +227,19 @@ await setDoc(doc(db, "events", "evt-seed-past"), {
 await updateDoc(doc(db, "events", "evt-seed-cluster"), { rsvpIds: arrayUnion(uids.thandi) })
 await as("pieter")
 await updateDoc(doc(db, "events", "evt-seed-cluster"), { rsvpIds: arrayUnion(uids.pieter) })
+
+// Pieter confirms his email (done directly in the Auth emulator) and asks to be verified.
+await fetch("http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/projects/demo-coursify/accounts:update", {
+  method: "POST",
+  headers: { "Content-Type": "application/json", Authorization: "Bearer owner" },
+  body: JSON.stringify({ localId: uids.pieter, emailVerified: true }),
+})
+await signOut(auth)
+await signInWithEmailAndPassword(auth, people.pieter.email, PASSWORD)
+await auth.currentUser.getIdToken(true)
+await setDoc(doc(db, "verificationRequests", uids.pieter), {
+  saceNumber: "10293847", school: people.pieter.school, name: people.pieter.name, status: "pending", submittedAt: ago(30),
+})
 
 await signOut(auth)
 console.log("Seeded. Sign in as thandi@school.test /", PASSWORD)

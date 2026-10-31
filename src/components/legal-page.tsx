@@ -53,6 +53,10 @@ function Privacy() {
         <ul>
           <li>Account details: your name, email address and password (stored only as a secure hash by Google Firebase Authentication).</li>
           <li>Profile details you choose to add: school, subjects, institution type, bio and photo.</li>
+          <li>
+            If you ask to be verified as a teacher: your SACE registration number and school. Only you and the Coursify
+            team can see them; we use them solely to check the public SACE register.
+          </li>
           <li>Content you share: resources, posts, meetups, and the files attached to them.</li>
           <li>Messages, attachments and voice notes you send to other educators.</li>
           <li>Activity needed to run the service: follows, saves, RSVPs, download counts and the time you were last active.</li>
@@ -172,8 +176,10 @@ function Terms() {
       </Section>
       <Section title="5. Verified badge">
         <p>
-          The verified badge shows that a member completed their profile and shared resources. It is not a check of
-          qualifications or employment.
+          Sharing resources and hosting meetups is reserved for verified teachers. A member is verified once the
+          Coursify team has matched their SACE registration number and name on the public SACE register. The badge
+          confirms registration with SACE only; it is not a check of qualifications, employment or the quality of a
+          resource. We may remove a badge if the registration cannot be confirmed or these terms are broken.
         </p>
       </Section>
       <Section title="6. The service">
