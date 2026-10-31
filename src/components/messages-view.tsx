@@ -1,6 +1,5 @@
 import Avatar from "@/components/avatar"
 import {
-  EmojiPicker,
   FileAttachment,
   ImageAttachment,
   ImageLightbox,
@@ -15,6 +14,8 @@ import {
   sameDay,
 } from "@/components/chat/chat-parts"
 import Icons from "@/components/icons"
+import EmojiPicker from "@/components/chat/emoji-picker"
+import { LockRail, VoiceRecorderBar, useVoiceRecorder } from "@/components/chat/voice-recorder"
 import { MAX_FILE_BYTES } from "@/data"
 import { useApp } from "@/store"
 import type { ChatAttachment, ChatMessage, Educator } from "@/types"
@@ -31,7 +32,6 @@ import {
   type KeyboardEvent,
 } from "react"
 
-const VOICE_LIMIT_SECONDS = 180
 // Consecutive messages from one sender within this window share a bubble group.
 const GROUP_WINDOW_MS = 5 * 60_000
 const TYPING_FRESH_MS = 6_000
@@ -671,7 +671,8 @@ function Thread({
               const end = el?.selectionEnd ?? draft.length
               setDraft((value) => value.slice(0, start) + emoji + value.slice(end))
               requestAnimationFrame(() => {
-                el?.focus()
+                // On phones, keep the emoji panel up instead of popping the keyboard over it.
+                if (window.matchMedia("(pointer: fine)").matches) el?.focus()
                 el?.setSelectionRange(start + emoji.length, start + emoji.length)
               })
             }}
@@ -937,145 +938,15 @@ function Composer({
   onVoiceNote: (file: File) => Promise<void>
   notify: (message: string) => void
 }) {
-  const [recording, setRecording] = useState(false)
-  const [seconds, setSeconds] = useState(0)
   const [sendingVoice, setSendingVoice] = useState(false)
-  const recorderRef = useRef<MediaRecorder | null>(null)
-  const streamRef = useRef<MediaStream | null>(null)
-  const chunksRef = useRef<Blob[]>([])
-  const startedAtRef = useRef(0)
-  const timerRef = useRef<number | null>(null)
-  const discardRef = useRef(false)
-
-  const stopTracks = useCallback(() => {
-    if (timerRef.current) window.clearInterval(timerRef.current)
-    timerRef.current = null
-    streamRef.current?.getTracks().forEach((track) => track.stop())
-    streamRef.current = null
-  }, [])
-
-  useEffect(() => () => stopTracks(), [stopTracks])
-
-  const finish = useCallback(
-    (discard: boolean) => {
-      const recorder = recorderRef.current
-      if (!recorder) return
-      discardRef.current = discard
-      if (timerRef.current) window.clearInterval(timerRef.current)
-      timerRef.current = null
-      if (recorder.state !== "inactive") recorder.stop()
+  const recorder = useVoiceRecorder({
+    notify,
+    onSend: (file) => {
+      setSendingVoice(true)
+      void onVoiceNote(file).finally(() => setSendingVoice(false))
     },
-    [],
-  )
-
-  async function start() {
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      notify("Voice notes aren't supported in this browser.")
-      return
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
-      })
-      streamRef.current = stream
-      chunksRef.current = []
-      const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((type) =>
-        MediaRecorder.isTypeSupported(type),
-      )
-      let recorder: MediaRecorder
-      try {
-        recorder = new MediaRecorder(stream, { audioBitsPerSecond: 20_000, ...(mimeType ? { mimeType } : {}) })
-      } catch {
-        recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
-      }
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunksRef.current.push(event.data)
-      }
-      recorder.onstop = () => {
-        // Measured from the start time, not from React state, so the 3-minute auto-stop
-        // (which fires inside the interval closure) still sees the real duration.
-        const duration = Math.min(VOICE_LIMIT_SECONDS, Math.round((Date.now() - startedAtRef.current) / 1000))
-        const discard = discardRef.current
-        const chunks = chunksRef.current
-        stopTracks()
-        recorderRef.current = null
-        setRecording(false)
-        setSeconds(0)
-        if (discard) return
-        if (chunks.length === 0 || duration < 1) {
-          notify("That voice note was too short.")
-          return
-        }
-        const type = recorder.mimeType || "audio/webm"
-        const ext = type.includes("mp4") ? "m4a" : "webm"
-        const label = `${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, "0")}`
-        const file = new File(chunks, `Voice note (${label}).${ext}`, { type })
-        setSendingVoice(true)
-        void onVoiceNote(file).finally(() => setSendingVoice(false))
-      }
-      recorderRef.current = recorder
-      discardRef.current = false
-      startedAtRef.current = Date.now()
-      recorder.start(250)
-      setRecording(true)
-      setSeconds(0)
-      timerRef.current = window.setInterval(() => {
-        const elapsed = Math.floor((Date.now() - startedAtRef.current) / 1000)
-        setSeconds(elapsed)
-        if (elapsed >= VOICE_LIMIT_SECONDS) {
-          notify("Voice notes can be up to 3 minutes. Sending it now.")
-          finish(false)
-        }
-      }, 250)
-    } catch {
-      stopTracks()
-      notify("Coursify needs microphone access to record a voice note.")
-    }
-  }
-
-  if (recording) {
-    return (
-      <div className="animate-fade-in flex h-12 items-center gap-2">
-        <button
-          type="button"
-          onClick={() => finish(true)}
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-muted transition-colors hover:bg-canvas hover:text-[#8a3b32]"
-          aria-label="Discard voice note"
-          title="Discard"
-        >
-          <Icons.Trash className="h-5 w-5" />
-        </button>
-        <div className="flex h-11 min-w-0 flex-1 items-center gap-3 rounded-full bg-canvas px-4">
-          <span className="relative flex h-2.5 w-2.5 shrink-0">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#d64545] opacity-60" />
-            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#d64545]" />
-          </span>
-          <span className="font-mono text-[13px] font-semibold tabular-nums text-ink">
-            {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
-          </span>
-          <span className="flex h-5 min-w-0 flex-1 items-center gap-[3px] overflow-hidden">
-            {Array.from({ length: 28 }, (_, i) => (
-              <span
-                key={i}
-                className="w-[3px] shrink-0 animate-pulse rounded-full bg-navy/45"
-                style={{ height: `${30 + ((i * 37) % 70)}%`, animationDelay: `${(i % 7) * 110}ms` }}
-              />
-            ))}
-          </span>
-          <span className="hidden text-[11px] text-muted sm:inline">max 3:00</span>
-        </div>
-        <button
-          type="button"
-          onClick={() => finish(false)}
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-navy text-white transition-transform hover:bg-navy-hover active:scale-95"
-          aria-label="Send voice note"
-          title="Send"
-        >
-          <Icons.Send className="h-5 w-5" />
-        </button>
-      </div>
-    )
-  }
+  })
+  const recordingUi = recorder.phase !== "idle"
 
   return (
     <form
@@ -1083,41 +954,65 @@ function Composer({
         event.preventDefault()
         onSend()
       }}
-      className="flex items-end gap-1.5"
+      className="relative flex items-end gap-1.5"
     >
-      <div className="flex min-h-11 min-w-0 flex-1 items-end rounded-[22px] bg-canvas pl-1 pr-1 transition-shadow focus-within:shadow-[0_0_0_3px_rgba(26,43,74,0.10)]">
+      {recordingUi ? (
+        <VoiceRecorderBar recorder={recorder} />
+      ) : (
+        <div className="flex min-h-11 min-w-0 flex-1 items-end rounded-[22px] bg-canvas pl-1 pr-1 transition-shadow focus-within:shadow-[0_0_0_3px_rgba(26,43,74,0.10)]">
+          <button
+            type="button"
+            onClick={onEmoji}
+            data-emoji-toggle
+            className={`grid h-11 w-10 shrink-0 place-items-center rounded-full transition-colors ${
+              emojiOpen ? "text-navy" : "text-muted hover:text-ink"
+            }`}
+            aria-label="Emoji"
+            title="Emoji"
+          >
+            <Icons.Smile className="h-5 w-5" />
+          </button>
+          <textarea
+            ref={textareaRef}
+            rows={1}
+            value={draft}
+            onChange={(event) => onDraft(event.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder={sendingVoice ? "Sending voice note…" : "Message"}
+            className="max-h-[140px] min-w-0 flex-1 resize-none bg-transparent py-[11px] text-[15px] leading-[1.4] text-ink outline-none placeholder:text-muted"
+          />
+          <button
+            type="button"
+            onClick={onAttach}
+            disabled={busy}
+            className="grid h-11 w-10 shrink-0 place-items-center rounded-full text-muted transition-colors hover:text-ink disabled:opacity-40"
+            aria-label="Attach a file"
+            title="Attach a file"
+          >
+            <Icons.Paperclip className="h-5 w-5" />
+          </button>
+        </div>
+      )}
+      {recorder.hint ? (
+        <span
+          role="status"
+          className="animate-pop-in pointer-events-none absolute bottom-[calc(100%+10px)] right-0 whitespace-nowrap rounded-xl bg-ink px-3 py-2 text-[12.5px] font-medium text-white shadow-lg"
+        >
+          Hold to record, release to send
+        </span>
+      ) : null}
+      <LockRail recorder={recorder} />
+      {recorder.phase === "locked" || recorder.phase === "review" ? (
         <button
           type="button"
-          onClick={onEmoji}
-          className={`grid h-11 w-10 shrink-0 place-items-center rounded-full transition-colors ${
-            emojiOpen ? "text-navy" : "text-muted hover:text-ink"
-          }`}
-          aria-label="Emoji"
-          title="Emoji"
+          onClick={recorder.phase === "review" ? recorder.sendTake : recorder.sendNow}
+          className="animate-pop-in grid h-11 w-11 shrink-0 place-items-center rounded-full bg-navy text-white transition-transform hover:bg-navy-hover active:scale-95"
+          aria-label="Send voice note"
+          title="Send"
         >
-          <Icons.Smile className="h-5 w-5" />
+          <Icons.Send className="h-5 w-5" />
         </button>
-        <textarea
-          ref={textareaRef}
-          rows={1}
-          value={draft}
-          onChange={(event) => onDraft(event.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder={sendingVoice ? "Sending voice note…" : "Message"}
-          className="max-h-[140px] min-w-0 flex-1 resize-none bg-transparent py-[11px] text-[15px] leading-[1.4] text-ink outline-none placeholder:text-muted"
-        />
-        <button
-          type="button"
-          onClick={onAttach}
-          disabled={busy}
-          className="grid h-11 w-10 shrink-0 place-items-center rounded-full text-muted transition-colors hover:text-ink disabled:opacity-40"
-          aria-label="Attach a file"
-          title="Attach a file"
-        >
-          <Icons.Paperclip className="h-5 w-5" />
-        </button>
-      </div>
-      {canSend ? (
+      ) : canSend && !recordingUi ? (
         <button
           type="submit"
           className="animate-pop-in grid h-11 w-11 shrink-0 place-items-center rounded-full bg-navy text-white transition-transform hover:bg-navy-hover active:scale-95"
@@ -1128,11 +1023,14 @@ function Composer({
       ) : (
         <button
           type="button"
-          onClick={() => void start()}
+          {...recorder.micProps}
           disabled={busy || sendingVoice}
-          className="animate-pop-in grid h-11 w-11 shrink-0 place-items-center rounded-full bg-navy text-white transition-transform hover:bg-navy-hover active:scale-95 disabled:opacity-50"
+          className={`grid h-11 w-11 shrink-0 touch-none place-items-center rounded-full bg-navy text-white transition-transform duration-150 select-none [-webkit-touch-callout:none] hover:bg-navy-hover disabled:opacity-50 ${
+            recordingUi ? "scale-[1.35] shadow-[0_0_0_8px_rgba(26,43,74,0.12)]" : "animate-pop-in"
+          }`}
+          style={recordingUi ? { transform: `translate(${recorder.drag.x * 0.25}px, ${recorder.drag.y * 0.25}px) scale(1.35)` } : undefined}
           aria-label="Record a voice note"
-          title="Record a voice note"
+          title="Hold to record · click for hands-free"
         >
           <Icons.Mic className="h-5 w-5" />
         </button>

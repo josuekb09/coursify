@@ -2,7 +2,6 @@ import FormatMark from "@/components/format-mark"
 import Icons from "@/components/icons"
 import { downloadDataUrl } from "@/utils"
 import { downloadRemoteFile } from "@/utils"
-import { EMOJI_CATALOG, searchEmojis } from "@/emojis"
 import { formatFromExtension } from "@/formats"
 import type { ChatMessage, Conversation, MessageStatus } from "@/types"
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react"
@@ -279,13 +278,56 @@ function durationFromName(name?: string) {
 
 const SPEEDS = [1, 1.5, 2]
 
+const peakCache = new Map<string, Promise<number[] | null>>()
+
+/** Decodes a voice note once to draw its real waveform; falls back to null if the browser can't. */
+function decodePeaks(url: string, count: number) {
+  const key = `${count}:${url}`
+  let job = peakCache.get(key)
+  if (!job) {
+    job = (async () => {
+      try {
+        const AudioContextClass = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+        if (!AudioContextClass) return null
+        const bytes = await (await fetch(url)).arrayBuffer()
+        const context = new AudioContextClass()
+        const audio = await context.decodeAudioData(bytes)
+        void context.close()
+        const data = audio.getChannelData(0)
+        const size = Math.floor(data.length / count) || 1
+        const peaks = Array.from({ length: count }, (_, i) => {
+          let sum = 0
+          for (let j = i * size; j < Math.min(data.length, (i + 1) * size); j += 1) sum += data[j] * data[j]
+          return Math.sqrt(sum / size)
+        })
+        const loudest = Math.max(...peaks, 0.0001)
+        return peaks.map((value) => 0.14 + 0.86 * (value / loudest))
+      } catch {
+        return null
+      }
+    })()
+    peakCache.set(key, job)
+  }
+  return job
+}
+
 export function VoiceNote({ url, name, seed, mine }: { url: string; name?: string; seed: string; mine: boolean }) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const [playing, setPlaying] = useState(false)
   const [current, setCurrent] = useState(0)
   const [duration, setDuration] = useState(() => durationFromName(name))
   const [speed, setSpeed] = useState(1)
-  const bars = useMemo(() => waveformFor(seed, 34), [seed])
+  const fallback = useMemo(() => waveformFor(seed, 34), [seed])
+  const [decoded, setDecoded] = useState<number[] | null>(null)
+  const bars = decoded ?? fallback
+
+  useEffect(() => {
+    let alive = true
+    void decodePeaks(url, 34).then((peaks) => alive && peaks && setDecoded(peaks))
+    return () => {
+      alive = false
+    }
+  }, [url])
 
   useEffect(() => {
     const audio = audioRef.current
@@ -323,8 +365,13 @@ export function VoiceNote({ url, name, seed, mine }: { url: string; name?: strin
   function toggle() {
     const audio = audioRef.current
     if (!audio) return
-    if (playing) audio.pause()
-    else void audio.play().catch(() => setPlaying(false))
+    if (playing) {
+      audio.pause()
+      return
+    }
+    // One voice note at a time, like WhatsApp.
+    document.querySelectorAll("audio").forEach((other) => other !== audio && other.pause())
+    void audio.play().catch(() => setPlaying(false))
   }
 
   function seek(event: PointerEvent<HTMLDivElement>) {
@@ -393,87 +440,6 @@ export function VoiceNote({ url, name, seed, mine }: { url: string; name?: strin
           </button>
         </div>
       </div>
-    </div>
-  )
-}
-
-/* ─── Emoji picker ───────────────────────────────────────────────────────────────────── */
-
-export function EmojiPicker({ onPick, onClose }: { onPick: (emoji: string) => void; onClose: () => void }) {
-  const [category, setCategory] = useState(EMOJI_CATALOG[0].id)
-  const [search, setSearch] = useState("")
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    function onDown(event: MouseEvent) {
-      if (ref.current && !ref.current.contains(event.target as Node)) onClose()
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose()
-    }
-    document.addEventListener("mousedown", onDown)
-    document.addEventListener("keydown", onKey)
-    return () => {
-      document.removeEventListener("mousedown", onDown)
-      document.removeEventListener("keydown", onKey)
-    }
-  }, [onClose])
-
-  const emojis = useMemo(() => {
-    if (search.trim()) return searchEmojis(search)
-    return (EMOJI_CATALOG.find((item) => item.id === category) ?? EMOJI_CATALOG[0]).emojis.map((item) => item.emoji)
-  }, [category, search])
-
-  return (
-    <div
-      ref={ref}
-      className="animate-pop-in absolute bottom-full left-2 z-30 mb-2 w-[min(22rem,calc(100vw-1.5rem))] origin-bottom-left overflow-hidden rounded-2xl border border-line bg-surface shadow-[0_16px_48px_rgba(18,20,28,0.16)] sm:left-3"
-    >
-      <div className="p-2.5">
-        <div className="relative">
-          <Icons.Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
-          <input
-            autoFocus
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search emoji"
-            className="h-9 w-full rounded-xl bg-canvas pl-8 pr-3 text-[13px] text-ink outline-none placeholder:text-muted focus:shadow-[0_0_0_3px_rgba(26,43,74,0.10)]"
-          />
-        </div>
-      </div>
-      <div className="grid h-56 grid-cols-8 content-start gap-0.5 overflow-y-auto px-2 pb-2 text-[22px]">
-        {emojis.map((emoji, index) => (
-          <button
-            type="button"
-            key={`${emoji}-${index}`}
-            onClick={() => onPick(emoji)}
-            className="grid aspect-square place-items-center rounded-lg transition-transform hover:bg-canvas active:scale-90"
-          >
-            {emoji}
-          </button>
-        ))}
-        {emojis.length === 0 ? (
-          <p className="col-span-8 py-8 text-center text-[13px] text-muted">No emoji match “{search}”</p>
-        ) : null}
-      </div>
-      {!search.trim() ? (
-        <div className="flex items-center justify-between gap-0.5 border-t border-line px-1.5 py-1.5">
-          {EMOJI_CATALOG.map((item) => (
-            <button
-              type="button"
-              key={item.id}
-              onClick={() => setCategory(item.id)}
-              title={item.name}
-              aria-label={item.name}
-              className={`grid h-8 flex-1 place-items-center rounded-lg text-[17px] transition-colors ${
-                category === item.id ? "bg-navy-soft" : "opacity-60 hover:bg-canvas hover:opacity-100"
-              }`}
-            >
-              {item.icon}
-            </button>
-          ))}
-        </div>
-      ) : null}
     </div>
   )
 }
