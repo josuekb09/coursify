@@ -48,7 +48,7 @@ function EmailVerificationBanner() {
 
 function WorkspaceSplash() {
   return (
-    <div className="grid min-h-full place-items-center bg-canvas text-ink">
+    <div className="grid min-h-dvh place-items-center bg-canvas text-ink">
       <p className="font-mono text-[12px] uppercase tracking-[0.14em] text-muted">
         Opening your workspace…
       </p>
@@ -207,7 +207,7 @@ function Workspace() {
   }
 
   return (
-    <div className="min-h-full overflow-x-hidden bg-canvas text-ink">
+    <div className="min-h-dvh overflow-x-clip bg-canvas text-ink">
       {!live ? (
         <p className="bg-navy px-4 py-2 text-center text-[13px] text-white">
           Reconnecting to Coursify so messages and profiles stay in sync…
@@ -231,7 +231,7 @@ function Workspace() {
       <VerifiedBadgeBanner onViewProfile={() => goProfile(user.id)} />
 
       <div className="mx-auto flex max-w-[1440px]">
-        <aside className="sticky top-16 hidden h-[calc(100vh-4rem)] w-[212px] shrink-0 overflow-y-auto border-r border-line px-4 py-6 lg:block">
+        <aside className="sticky top-16 hidden h-[calc(100dvh-4rem)] w-[212px] shrink-0 overflow-y-auto border-r border-line px-4 py-6 lg:block">
           <Sidebar view={view} onNavigate={goNav} />
         </aside>
 

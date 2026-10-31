@@ -251,7 +251,7 @@ export default function LegalPage({ doc }: { doc: LegalDoc }) {
     window.scrollTo(0, 0)
   }, [title])
   return (
-    <div className="min-h-full bg-canvas text-ink">
+    <div className="min-h-dvh bg-canvas text-ink">
       <header className="sticky top-0 z-20 border-b border-line bg-canvas/85 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-3xl items-center justify-between px-4 sm:px-6">
           <a href="/" aria-label="Coursify home">

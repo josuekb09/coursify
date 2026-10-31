@@ -1,39 +1,36 @@
 # Landing page photography
 
-Every image here is in the public domain or released under CC0, so it can be used commercially
-without attribution. The sources are listed anyway so the licence can be re-checked at any time.
+Every photo was taken in South Africa and is free for commercial use without payment. Sources are
+listed so the licence can be re-checked at any time. Each image is stored as a JPEG fallback plus
+WebP sizes (`-800`, `-1400`, `-2000` where the original is large enough).
 
-## hero-science-class.jpg
+## hero-science-class
 
 - Source: https://commons.wikimedia.org/wiki/File:Education_in_South_Africa_(8329322789).jpg
-- Original title: Education in South Africa (8329322789).jpg
 - Author: USAID in Africa
-- Licence: Public domain (Public domain)
-- Stored size: 1800×1533
+- Licence: Public domain (work of the US federal government, 17 U.S.C. § 105). Must not be used to
+  imply USAID endorses Coursify.
 
-## teachers-planning.jpg
+## classroom-gauteng
 
-- Source: https://commons.wikimedia.org/wiki/File:Teacher_Training,_DRC_(38928280194).jpg
-- Original title: Teacher Training, DRC (38928280194).jpg
-- Author: USAID in Africa
-- Licence: Public domain (Public domain)
-- Stored size: 1800×1200
+- Source: https://www.pexels.com/photo/empty-classroom-view-through-window-in-south-africa-39269686/
+- Photographer: Thabang Thamano
+- Location: Gauteng, South Africa
+- Licence: Pexels License (free for commercial use, no attribution required)
 
-## teacher-workshop.jpg
+## pretoria-assembly
 
-- Source: https://commons.wikimedia.org/wiki/File:Teacher_Training,_DRC_(25765238788).jpg
-- Original title: Teacher Training, DRC (25765238788).jpg
-- Author: USAID in Africa
-- Licence: Public domain (Public domain)
-- Stored size: 1800×1200
+- Source: https://www.pexels.com/photo/students-of-pretoria-boys-high-school-singing-during-a-school-function-5350023/
+- Photographer: Vincent Peters
+- Location: Pretoria, South Africa
+- Licence: Pexels License (free for commercial use, no attribution required)
 
-## reading-lesson.jpg
+## free-state-outdoor-class
 
-- Source: https://commons.wikimedia.org/wiki/File:School_Health_Reading_Program,_Uganda_(24768454277).jpg
-- Original title: School Health Reading Program, Uganda (24768454277).jpg
-- Author: USAID in Africa
-- Licence: Public domain (Public domain)
-- Stored size: 1800×1200
+- Source: https://www.pexels.com/photo/woman-with-the-kids-in-a-playground-11128819/
+- Photographer: Jørgen Larsen
+- Location: Free State, South Africa
+- Licence: Pexels License (free for commercial use, no attribution required)
 
-USAID photos are works of the United States federal government and are in the public domain
-(17 U.S.C. § 105). They must not be used to imply USAID endorses Coursify.
+The Pexels License does not allow selling unaltered copies of the photos or implying that the
+people shown endorse Coursify.

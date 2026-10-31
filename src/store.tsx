@@ -2208,7 +2208,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
 
   if (!ready) {
     return (
-      <div className="grid min-h-full place-items-center bg-canvas text-ink">
+      <div className="grid min-h-dvh place-items-center bg-canvas text-ink">
         <p className="font-mono text-[12px] uppercase tracking-[0.14em] text-muted">Opening Coursify…</p>
       </div>
     )

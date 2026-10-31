@@ -76,7 +76,7 @@ export default function AuthScreen({
   }
 
   return (
-    <div className="grid min-h-full bg-[#f5f5f5] lg:grid-cols-2">
+    <div className="grid min-h-dvh bg-[#f5f5f5] lg:grid-cols-2">
       <aside className="relative hidden flex-col justify-between overflow-hidden bg-navy p-10 text-white lg:flex xl:p-14">
         <div
           className="pointer-events-none absolute -right-16 -bottom-10 h-[420px] w-[420px] opacity-[0.1]"

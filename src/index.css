@@ -94,9 +94,41 @@
 html,
 body,
 #root {
-  height: 100%;
+  min-height: 100%;
   max-width: 100%;
-  overflow-x: hidden;
+  /* clip, not hidden: hidden turns body into its own scroller, which breaks sticky headers,
+     anchor scrolling and scroll restoration. */
+  overflow-x: clip;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 5rem;
+  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeLegibility;
+}
+
+/* Large screens and TVs: scale the whole interface instead of leaving a narrow column. */
+@media (min-width: 1800px) {
+  html {
+    zoom: 1.2;
+  }
+}
+@media (min-width: 2300px) {
+  html {
+    zoom: 1.5;
+  }
+}
+@media (min-width: 3200px) {
+  html {
+    zoom: 2;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-navy);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 
 img,

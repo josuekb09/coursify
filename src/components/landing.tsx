@@ -8,13 +8,15 @@ const SUPPORT_EMAIL = FOUNDER_EMAIL
 const INSTAGRAM_HANDLE = "@cours.ify"
 const INSTAGRAM_URL = "https://www.instagram.com/cours.ify/"
 
-// Public-domain photography; sources and licences are listed in public/landing-images/SOURCES.md.
+// Photography from South Africa; sources and licences are listed in public/landing-images/SOURCES.md.
+// Each photo ships as a JPEG fallback plus WebP widths for srcset.
+type PhotoAsset = { name: string; widths: number[] }
 const photos = {
-  hero: "/landing-images/hero-science-class.jpg",
-  planning: "/landing-images/teachers-planning.jpg",
-  workshop: "/landing-images/teacher-workshop.jpg",
-  mission: "/landing-images/reading-lesson.jpg",
-}
+  hero: { name: "hero-science-class", widths: [800, 1400] },
+  planning: { name: "classroom-gauteng", widths: [800, 1400, 2000] },
+  workshop: { name: "pretoria-assembly", widths: [800, 1400, 2000] },
+  mission: { name: "free-state-outdoor-class", widths: [800, 1400, 2000] },
+} satisfies Record<string, PhotoAsset>
 
 const nav = [
   { href: "#product", label: "Product" },
@@ -72,7 +74,10 @@ function Reveal({ children, className = "", delay = 0 }: { children: ReactNode; 
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    if (typeof IntersectionObserver === "undefined") {
+    if (
+      typeof IntersectionObserver === "undefined" ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
       setVisible(true)
       return
     }
@@ -83,7 +88,7 @@ function Reveal({ children, className = "", delay = 0 }: { children: ReactNode; 
           observer.disconnect()
         }
       },
-      { rootMargin: "0px 0px -10% 0px" },
+      { rootMargin: "0px 0px 12% 0px" },
     )
     observer.observe(el)
     return () => observer.disconnect()
@@ -104,16 +109,19 @@ function Photo({
   alt,
   className = "",
   eager = false,
+  sizes = "(min-width: 1024px) 50vw, 100vw",
 }: {
-  src: string
+  src: PhotoAsset
   alt: string
   className?: string
   eager?: boolean
+  sizes?: string
 }) {
+  const base = `/landing-images/${src.name}`
   const [loaded, setLoaded] = useState(false)
   const [failed, setFailed] = useState(false)
   return (
-    <div className={`relative overflow-hidden bg-navy-soft ${className}`}>
+    <div className={`group/photo relative overflow-hidden bg-navy-soft ${className}`}>
       {/* Brand gradient doubles as the loading state and as a fallback if the image is missing. */}
       <div
         className={`absolute inset-0 transition-opacity duration-500 ${loaded && !failed ? "opacity-0" : "opacity-100"}`}
@@ -125,16 +133,19 @@ function Photo({
           <CoursifyMark className="h-16 w-16 opacity-30" />
         </div>
       ) : (
-        <img
-          src={src}
-          alt={alt}
-          loading={eager ? "eager" : "lazy"}
-          fetchPriority={eager ? "high" : "auto"}
-          decoding="async"
-          onLoad={() => setLoaded(true)}
-          onError={() => setFailed(true)}
-          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-500 ${loaded ? "opacity-100" : "opacity-0"}`}
-        />
+        <picture>
+          <source type="image/webp" srcSet={src.widths.map((w) => `${base}-${w}.webp ${w}w`).join(", ")} sizes={sizes} />
+          <img
+            src={`${base}.jpg`}
+            alt={alt}
+            loading={eager ? "eager" : "lazy"}
+            fetchPriority={eager ? "high" : "auto"}
+            decoding="async"
+            onLoad={() => setLoaded(true)}
+            onError={() => setFailed(true)}
+            className={`absolute inset-0 h-full w-full object-cover transition-[opacity,transform] duration-700 ease-out group-hover/photo:scale-[1.03] ${loaded ? "opacity-100" : "opacity-0"}`}
+          />
+        </picture>
       )}
     </div>
   )
@@ -267,17 +278,35 @@ function ContactForm() {
 
 export default function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGetStarted: () => void }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8)
+    onScroll()
+    window.addEventListener("scroll", onScroll, { passive: true })
+    return () => window.removeEventListener("scroll", onScroll)
+  }, [])
 
   return (
-    <div className="min-h-full bg-canvas text-ink">
-      <header className="sticky top-0 z-30 border-b border-line/80 bg-canvas/85 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-5 sm:px-6">
+    <div className="min-h-dvh bg-canvas text-ink">
+      <header
+        className={`sticky top-0 z-30 border-b backdrop-blur-xl transition-[background-color,box-shadow,border-color] duration-300 ${
+          scrolled
+            ? "border-line/80 bg-canvas/80 shadow-[0_8px_30px_rgba(18,20,28,0.06)]"
+            : "border-transparent bg-canvas/40"
+        }`}
+      >
+        <div className={`mx-auto flex max-w-6xl transition-[height] duration-300 ${scrolled ? "h-14" : "h-16 sm:h-[72px]"} items-center justify-between gap-3 px-5 sm:px-6`}>
           <a href="#top" className="shrink-0" aria-label="Coursify home">
             <Logo />
           </a>
           <nav className="hidden items-center gap-7 text-[14px] font-medium text-muted lg:flex">
             {nav.map((item) => (
-              <a key={item.href} href={item.href} className="transition-colors hover:text-ink">
+              <a
+                key={item.href}
+                href={item.href}
+                className="relative py-1 transition-colors after:absolute after:inset-x-0 after:-bottom-0.5 after:h-[2px] after:origin-left after:scale-x-0 after:rounded-full after:bg-navy after:transition-transform hover:text-ink hover:after:scale-x-100"
+              >
                 {item.label}
               </a>
             ))}
@@ -322,18 +351,23 @@ export default function Landing({ onSignIn, onGetStarted }: { onSignIn: () => vo
       <main id="top">
         {/* ── Hero ── */}
         <section className="relative overflow-hidden">
-          <div
-            className="pointer-events-none absolute inset-x-0 top-0 h-[520px] bg-[radial-gradient(60%_60%_at_20%_0%,rgba(26,43,74,0.08),transparent)]"
-            aria-hidden="true"
-          />
+          <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+            <div className="absolute -left-40 -top-40 h-[520px] w-[520px] rounded-full bg-[radial-gradient(closest-side,rgba(26,43,74,0.14),transparent)]" />
+            <div className="absolute -right-32 top-24 h-[460px] w-[460px] rounded-full bg-[radial-gradient(closest-side,rgba(47,158,107,0.12),transparent)]" />
+            <div className="absolute -bottom-24 left-1/3 h-[380px] w-[380px] rounded-full bg-[radial-gradient(closest-side,rgba(232,170,66,0.12),transparent)]" />
+            <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(18,20,28,0.035)_1px,transparent_1px),linear-gradient(to_bottom,rgba(18,20,28,0.035)_1px,transparent_1px)] bg-[size:56px_56px] [mask-image:radial-gradient(70%_60%_at_50%_30%,black,transparent)]" />
+          </div>
           <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-5 pb-20 pt-12 sm:px-6 sm:pt-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.02fr)] lg:gap-14 lg:pb-28 lg:pt-20">
             <div className="animate-rise">
               <span className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-[12.5px] font-semibold text-navy">
                 <span className="h-1.5 w-1.5 rounded-full bg-online" />
                 Made for South African teachers
               </span>
-              <h1 className="mt-5 font-display text-[2.6rem] font-bold leading-[1.02] tracking-[-0.045em] text-ink sm:text-[3.4rem] lg:text-[3.9rem]">
-                Your next lesson is probably already written.
+              <h1 className="mt-5 font-display text-[clamp(2.5rem,6vw,4.1rem)] font-bold leading-[1.02] tracking-[-0.045em] text-ink text-balance">
+                Your next lesson is{" "}
+                <span className="bg-gradient-to-r from-navy via-[#2c4f86] to-[#2f9e6b] bg-clip-text text-transparent">
+                  probably already written.
+                </span>
               </h1>
               <p className="mt-6 max-w-[34rem] text-[17px] leading-[1.65] text-muted sm:text-[18px]">
                 Coursify is where teachers share the CAPS-aligned worksheets, slide decks and lesson plans they already use,
@@ -364,7 +398,7 @@ export default function Landing({ onSignIn, onGetStarted }: { onSignIn: () => vo
               <Photo
                 src={photos.hero}
                 alt="A science teacher guides learners through an electric circuits practical in a South African classroom"
-                className="aspect-[6/5] rounded-[28px] shadow-[0_30px_80px_rgba(18,20,28,0.18)]"
+                className="aspect-[6/5] rounded-[28px] shadow-[0_30px_80px_rgba(18,20,28,0.18)] ring-1 ring-black/5"
                 eager
               />
               {/* Illustrative product moments layered over the photo. */}
@@ -428,7 +462,7 @@ export default function Landing({ onSignIn, onGetStarted }: { onSignIn: () => vo
             <div className="mt-12 grid gap-4 sm:grid-cols-2">
               {features.map((feature, index) => (
                 <Reveal key={feature.title} delay={index * 80}>
-                  <article className="group h-full rounded-3xl border border-line bg-surface p-6 transition-shadow hover:shadow-[0_16px_40px_rgba(18,20,28,0.06)] sm:p-7">
+                  <article className="group h-full rounded-3xl border border-line bg-surface p-6 transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-1 hover:border-line-strong hover:shadow-[0_24px_50px_rgba(18,20,28,0.08)] sm:p-7">
                     <span className="grid h-11 w-11 place-items-center rounded-xl bg-navy-soft text-navy transition-colors group-hover:bg-navy group-hover:text-white">
                       <feature.icon className="h-5 w-5" />
                     </span>
@@ -447,7 +481,7 @@ export default function Landing({ onSignIn, onGetStarted }: { onSignIn: () => vo
             <Reveal>
               <Photo
                 src={photos.planning}
-                alt="Teachers working through lesson materials together at a table"
+                alt="A quiet classroom in Gauteng, desks ready before the learners arrive"
                 className="aspect-[4/3] rounded-[28px]"
               />
             </Reveal>
@@ -499,7 +533,7 @@ export default function Landing({ onSignIn, onGetStarted }: { onSignIn: () => vo
               <Reveal>
                 <Photo
                   src={photos.workshop}
-                  alt="Teachers taking part in a training workshop"
+                  alt="Learners at Pretoria Boys High School singing together at a school function"
                   className="aspect-[16/10] h-full rounded-[28px] lg:aspect-auto lg:min-h-[420px]"
                 />
               </Reveal>
@@ -538,7 +572,7 @@ export default function Landing({ onSignIn, onGetStarted }: { onSignIn: () => vo
           <div className="mx-auto grid max-w-6xl lg:grid-cols-2">
             <div className="relative min-h-[300px] sm:min-h-[400px] lg:min-h-[600px]">
               <div className="absolute inset-0">
-                <Photo src={photos.mission} alt="A teacher leads an energetic early-grade reading lesson" className="h-full w-full" />
+                <Photo src={photos.mission} alt="A teacher with young learners under a tree at a rural school in the Free State" className="h-full w-full" />
               </div>
               <div className="absolute inset-0 bg-gradient-to-t from-navy/40 to-transparent lg:bg-gradient-to-r lg:from-transparent lg:to-navy/30" aria-hidden="true" />
             </div>
@@ -675,7 +709,10 @@ export default function Landing({ onSignIn, onGetStarted }: { onSignIn: () => vo
             </div>
           </div>
           <div className="mt-14 flex flex-col gap-2 border-t border-white/10 pt-6 text-[12.5px] text-white/40 sm:flex-row sm:items-center sm:justify-between">
-            <p>© {new Date().getFullYear()} Coursify. Built for South African classrooms.</p>
+            <div className="space-y-1">
+              <p>© {new Date().getFullYear()} Coursify. Built for South African classrooms.</p>
+              <p className="text-white/30">Photos taken in South Africa by Thabang Thamano, Vincent Peters, Jørgen Larsen (Pexels) and USAID.</p>
+            </div>
             <nav aria-label="Legal" className="flex flex-wrap gap-x-5 gap-y-1">
               <a href="/privacy" className="hover:text-white">Privacy</a>
               <a href="/terms" className="hover:text-white">Terms</a>

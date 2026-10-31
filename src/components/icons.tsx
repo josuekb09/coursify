@@ -1,3 +1,62 @@
+import {
+  ArrowRight,
+  ArrowUpRight,
+  Award,
+  BookOpen,
+  Bookmark,
+  BriefcaseBusiness,
+  CalendarDays,
+  Camera,
+  Check,
+  CheckCheck,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  CircleAlert,
+  Clapperboard,
+  Clock3,
+  CodeXml,
+  Copy,
+  Download,
+  Eye,
+  FileArchive,
+  FileText,
+  Folder,
+  Globe,
+  Image,
+  Layers,
+  LayoutGrid,
+  Link2,
+  LogOut,
+  Mail,
+  MapPin,
+  Maximize2,
+  Menu,
+  MessageCircle,
+  Mic,
+  Paperclip,
+  Pause,
+  PencilLine,
+  Play,
+  Plus,
+  Presentation,
+  Search,
+  SendHorizontal,
+  Sheet,
+  ShieldCheck,
+  Smile,
+  Sparkles,
+  Square,
+  Trash2,
+  TrendingUp,
+  Upload,
+  Users,
+  UsersRound,
+  Video,
+  X,
+  type LucideIcon,
+} from "lucide-react"
+
 type IconProps = { className?: string; filled?: boolean; title?: string }
 
 const stroke = {
@@ -8,155 +67,25 @@ const stroke = {
   strokeLinejoin: "round" as const,
 }
 
-function Calendar(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <rect x="3" y="4.5" width="14" height="12.5" rx="1.5" />
-      <path d="M3 8.5h14M7 3v3M13 3v3" />
-    </svg>
-  )
+// Lucide line icons, tuned to one stroke weight across the app. `filled` fills the shape (saved bookmarks).
+function lucide(Icon: LucideIcon) {
+  function Wrapped({ className, filled, title }: IconProps) {
+    return (
+      <Icon
+        className={className}
+        strokeWidth={1.75}
+        absoluteStrokeWidth={false}
+        fill={filled ? "currentColor" : "none"}
+        aria-hidden={title ? undefined : true}
+        aria-label={title}
+        role={title ? "img" : undefined}
+      />
+    )
+  }
+  return Wrapped
 }
 
-function Grid(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <rect x="3" y="3" width="6" height="6" rx="1" />
-      <rect x="11" y="3" width="6" height="6" rx="1" />
-      <rect x="3" y="11" width="6" height="6" rx="1" />
-      <rect x="11" y="11" width="6" height="6" rx="1" />
-    </svg>
-  )
-}
-
-function Upload(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M10 13V4m0 0L6.5 7.5M10 4l3.5 3.5" />
-      <path d="M4 13v2.5A1.5 1.5 0 0 0 5.5 17h9a1.5 1.5 0 0 0 1.5-1.5V13" />
-    </svg>
-  )
-}
-
-function Bookmark(p: IconProps) {
-  return (
-    <svg
-      viewBox="0 0 20 20"
-      className={p.className}
-      fill={p.filled ? "currentColor" : "none"}
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M6 3.5h8a.5.5 0 0 1 .5.5v12l-4.5-3-4.5 3V4a.5.5 0 0 1 .5-.5Z" />
-    </svg>
-  )
-}
-
-function Layers(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M10 3 3 6.5 10 10l7-3.5L10 3Z" />
-      <path d="M3 10.5 10 14l7-3.5M3 13.5 10 17l7-3.5" />
-    </svg>
-  )
-}
-
-function Search(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <circle cx="9" cy="9" r="5.5" />
-      <path d="m17 17-3.5-3.5" />
-    </svg>
-  )
-}
-
-function Download(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M10 3v8m0 0 3.5-3.5M10 11 6.5 7.5" />
-      <path d="M4 14.5V16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-1.5" />
-    </svg>
-  )
-}
-
-function Trend(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M3 13.5 7.5 9l3 3L17 5.5" />
-      <path d="M13 5.5h4v4" />
-    </svg>
-  )
-}
-
-function Pin(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M10 17s5-4.2 5-8.5A5 5 0 0 0 5 8.5C5 12.8 10 17 10 17Z" />
-      <circle cx="10" cy="8.5" r="1.8" />
-    </svg>
-  )
-}
-
-function Briefcase(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <rect x="3" y="6.5" width="14" height="9.5" rx="1.5" />
-      <path d="M7 6.5V5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 13 5v1.5M3 10.5h14" />
-    </svg>
-  )
-}
-
-function File(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M6 2.5h5L15 6.5V16a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 5 16V4a1.5 1.5 0 0 1 1.5-1.5Z" />
-      <path d="M11 2.5v4h4" />
-    </svg>
-  )
-}
-
-function Eye(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M2.5 10S5.5 4.5 10 4.5 17.5 10 17.5 10 14.5 15.5 10 15.5 2.5 10 2.5 10Z" />
-      <circle cx="10" cy="10" r="2.2" />
-    </svg>
-  )
-}
-
-function Plus(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M10 4v12M4 10h12" />
-    </svg>
-  )
-}
-
-function Award(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <circle cx="10" cy="8" r="4.5" />
-      <path d="M7.3 11.7 6 17l4-2 4 2-1.3-5.3" />
-    </svg>
-  )
-}
-
-function Menu(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M3.5 5.5h13M3.5 10h13M3.5 14.5h13" />
-    </svg>
-  )
-}
-
-function Close(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M5 5l10 10M15 5 5 15" />
-    </svg>
-  )
-}
+/* Brand marks and the verified seal stay hand-drawn. */
 
 function VerifiedSeal(p: IconProps) {
   return (
@@ -177,79 +106,6 @@ function VerifiedSeal(p: IconProps) {
   )
 }
 
-function Pencil(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M12.5 3.5 16.5 7.5 8 16H4v-4L12.5 3.5Z" />
-      <path d="m11 5 4 4" />
-    </svg>
-  )
-}
-
-function Logout(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M8 4H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3" />
-      <path d="M11 10h6m0 0-2.5-2.5M17 10l-2.5 2.5" />
-    </svg>
-  )
-}
-
-function Trash(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M4.5 6h11M8 6V4.5h4V6M6.5 6l.5 10h6l.5-10" />
-    </svg>
-  )
-}
-
-function LinkIcon(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M8.5 11.5 7 13a3 3 0 0 0 4.2 4.2l2.3-2.3a3 3 0 0 0 0-4.2" />
-      <path d="M11.5 8.5 13 7a3 3 0 0 0-4.2-4.2L6.5 5.1a3 3 0 0 0 0 4.2" />
-    </svg>
-  )
-}
-
-function Chevron(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="m5.5 7.5 4.5 5 4.5-5" />
-    </svg>
-  )
-}
-
-function Check(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="m4.5 10.5 4 4 7-8" />
-    </svg>
-  )
-}
-
-function Users(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <circle cx="7.5" cy="7" r="2.4" />
-      <path d="M3.5 15.5c.4-2.4 2-3.7 4-3.7s3.6 1.3 4 3.7" />
-      <circle cx="13.5" cy="7.2" r="2.1" />
-      <path d="M12.2 11.9c1.7-.2 3.3.8 3.8 3.1" />
-    </svg>
-  )
-}
-
-function Mail(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <rect x="3" y="4.5" width="14" height="11" rx="1.5" />
-      <path d="m4 6.5 6 4.5 6-4.5" />
-    </svg>
-  )
-}
-
-// Brand marks are drawn in the same 1.6 stroke line style as the rest of the set so they sit
-// quietly next to Coursify's own icons instead of looking like pasted-in logos.
 function Gmail(p: IconProps) {
   return (
     <svg viewBox="0 0 20 20" className={p.className} {...stroke} aria-hidden="true">
@@ -268,335 +124,65 @@ function Instagram(p: IconProps) {
   )
 }
 
-function Copy(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <rect x="7" y="7" width="10" height="10" rx="1.5" />
-      <path d="M4 13H3.5A1.5 1.5 0 0 1 2 11.5v-8A1.5 1.5 0 0 1 3.5 2h8A1.5 1.5 0 0 1 13 3.5V4" />
-    </svg>
-  )
-}
-
-function Film(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <rect x="3" y="4" width="14" height="12" rx="1.5" />
-      <path d="M8 8.2 13 10 8 11.8V8.2Z" />
-    </svg>
-  )
-}
-
-function Slides(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <rect x="3.5" y="4.5" width="13" height="9" rx="1.5" />
-      <path d="M7 16h6M10 13.5V16" />
-    </svg>
-  )
-}
-
-function Table(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <rect x="3.5" y="4" width="13" height="12" rx="1.5" />
-      <path d="M3.5 8h13M3.5 12h13M8 4v12M12 4v12" />
-    </svg>
-  )
-}
-
-function Code(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="m7 6.5-3.5 3.5L7 13.5M13 6.5l3.5 3.5L13 13.5" />
-    </svg>
-  )
-}
-
-function Archive(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <rect x="3.5" y="3.5" width="13" height="4" rx="1" />
-      <path d="M4.5 7.5h11V16a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1V7.5Z" />
-      <path d="M8.5 10.5h3" />
-    </svg>
-  )
-}
-
-function Message(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M4 5.5h12A1.5 1.5 0 0 1 17.5 7v6A1.5 1.5 0 0 1 16 14.5H9l-4 3v-3H4A1.5 1.5 0 0 1 2.5 13V7A1.5 1.5 0 0 1 4 5.5Z" />
-    </svg>
-  )
-}
-
-function Send(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="m4 10 12-6-4 12-2.5-4.5L4 10Z" />
-    </svg>
-  )
-}
-
-function ChevronLeft(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="m12.5 5.5-5 4.5 5 4.5" />
-    </svg>
-  )
-}
-
-function ChevronRight(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="m7.5 5.5 5 4.5-5 4.5" />
-    </svg>
-  )
-}
-
-function Shield(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M10 2.5 4 5v5.5c0 4.2 2.7 6.8 6 7.5 3.3-.7 6-3.3 6-7.5V5l-6-2.5Z" />
-    </svg>
-  )
-}
-
-function Smile(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <circle cx="10" cy="10" r="7.5" />
-      <path d="M7 8.5h.01M13 8.5h.01" />
-      <path d="M7 12.5a4 4 0 0 0 6 0" />
-    </svg>
-  )
-}
-
-function Paperclip(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M14.5 9.5 8.7 15.3a3.25 3.25 0 0 1-4.6-4.6l6.4-6.4a2.2 2.2 0 0 1 3.1 3.1L7.2 13.8a1.1 1.1 0 0 1-1.6-1.6l5.7-5.7" />
-    </svg>
-  )
-}
-
-function DoubleCheck(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="m1.8 10.6 3.6 3.6 7.6-8.4" />
-      <path d="m9.2 13.4.8.8 7.6-8.4" />
-    </svg>
-  )
-}
-
-function Photo(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <rect x="3" y="3.5" width="14" height="13" rx="2" />
-      <circle cx="7.5" cy="7.5" r="1.25" />
-      <path d="m3 14 4.5-4.5 4 4" />
-      <path d="m10 12 2.5-2.5 4.5 4.5" />
-    </svg>
-  )
-}
-
-function Mic(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M10 2.5a2.5 2.5 0 0 0-2.5 2.5v5a2.5 2.5 0 0 0 5 0V5a2.5 2.5 0 0 0-2.5-2.5Z" />
-      <path d="M5 9.5a5 5 0 0 0 10 0M10 14.5v3M7.5 17.5h5" />
-    </svg>
-  )
-}
-
-function Play(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} fill="currentColor">
-      <path d="M6.5 4.5v11l9-5.5-9-5.5Z" />
-    </svg>
-  )
-}
-
-function Pause(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} fill="currentColor">
-      <path d="M6 4.5h2.5v11H6zM11.5 4.5H14v11h-2.5z" />
-    </svg>
-  )
-}
-
-function Stop(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} fill="currentColor">
-      <rect x="5" y="5" width="10" height="10" rx="1.5" />
-    </svg>
-  )
-}
-
-function Globe(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <circle cx="10" cy="10" r="7.5" />
-      <path d="M2.5 10h15M10 2.5a11.5 11.5 0 0 1 0 15 11.5 11.5 0 0 1 0-15Z" />
-    </svg>
-  )
-}
-
-function Folder(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M2.5 5.5A1.5 1.5 0 0 1 4 4h3.5a1.5 1.5 0 0 1 1.2.6L9.8 6H16a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 16 16H4a1.5 1.5 0 0 1-1.5-1.5V5.5Z" />
-    </svg>
-  )
-}
-
-function Alert(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M8.7 3.6 2.6 14.2A1.5 1.5 0 0 0 3.9 16.5h12.2a1.5 1.5 0 0 0 1.3-2.3L11.3 3.6a1.5 1.5 0 0 0-2.6 0Z" />
-      <path d="M10 8v3.5M10 14h.01" />
-    </svg>
-  )
-}
-
-function Clock(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <circle cx="10" cy="10" r="7" />
-      <path d="M10 6v4l2.5 1.5" />
-    </svg>
-  )
-}
-
-function Video(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <rect x="2.5" y="5" width="10.5" height="10" rx="2" />
-      <path d="m13 8.8 3.6-2.2a.6.6 0 0 1 .9.5v5.8a.6.6 0 0 1-.9.5L13 11.2" />
-    </svg>
-  )
-}
-
-function ArrowUpRight(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M6.5 13.5 13.5 6.5M7.5 6.5h6v6" />
-    </svg>
-  )
-}
-
-function ArrowRight(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M4 10h12m0 0-4.5-4.5M16 10l-4.5 4.5" />
-    </svg>
-  )
-}
-
-function Expand(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M12 3.5h4.5V8M8 16.5H3.5V12M16.5 3.5 11.5 8.5M3.5 16.5l5-5" />
-    </svg>
-  )
-}
-
-function Users3(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <circle cx="10" cy="6.5" r="2.5" />
-      <path d="M5.5 16c.4-2.6 2.2-4.2 4.5-4.2s4.1 1.6 4.5 4.2" />
-      <path d="M4.6 9.4a1.9 1.9 0 1 1 .3-3.7M15.4 9.4a1.9 1.9 0 1 0-.3-3.7M2 14.5c.2-1.5 1-2.6 2.2-3M18 14.5c-.2-1.5-1-2.6-2.2-3" />
-    </svg>
-  )
-}
-
-function Book(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M10 5.5C8.5 4.3 6.3 3.8 3.5 4v11c2.8-.2 5 .3 6.5 1.5 1.5-1.2 3.7-1.7 6.5-1.5V4c-2.8-.2-5 .3-6.5 1.5Z" />
-      <path d="M10 5.5v11" />
-    </svg>
-  )
-}
-
-function Sparkle(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M10 3c.4 3.4 1.6 4.6 5 5-3.4.4-4.6 1.6-5 5-.4-3.4-1.6-4.6-5-5 3.4-.4 4.6-1.6 5-5Z" />
-      <path d="M15.5 13.5c.2 1.3.7 1.8 2 2-1.3.2-1.8.7-2 2-.2-1.3-.7-1.8-2-2 1.3-.2 1.8-.7 2-2Z" />
-    </svg>
-  )
-}
-
-function Camera(p: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" className={p.className} {...stroke}>
-      <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h2l1.2-1.8h4.6L13.5 6h2A1.5 1.5 0 0 1 17 7.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14.5v-7Z" />
-      <circle cx="10" cy="10.8" r="2.8" />
-    </svg>
-  )
-}
-
 const Icons = {
-  Alert,
-  Clock,
-  Video,
-  ArrowUpRight,
-  ArrowRight,
-  Expand,
-  Users3,
-  Book,
-  Sparkle,
-  Camera,
-  Calendar,
-  Grid,
-  Upload,
-  Bookmark,
-  Layers,
-  Search,
-  Download,
-  Trend,
-  Pin,
-  Briefcase,
-  File,
-  Eye,
-  Plus,
-  Award,
-  Menu,
-  Close,
+  Alert: lucide(CircleAlert),
+  Clock: lucide(Clock3),
+  Video: lucide(Video),
+  ArrowUpRight: lucide(ArrowUpRight),
+  ArrowRight: lucide(ArrowRight),
+  Expand: lucide(Maximize2),
+  Users3: lucide(UsersRound),
+  Book: lucide(BookOpen),
+  Sparkle: lucide(Sparkles),
+  Camera: lucide(Camera),
+  Calendar: lucide(CalendarDays),
+  Grid: lucide(LayoutGrid),
+  Upload: lucide(Upload),
+  Bookmark: lucide(Bookmark),
+  Layers: lucide(Layers),
+  Search: lucide(Search),
+  Download: lucide(Download),
+  Trend: lucide(TrendingUp),
+  Pin: lucide(MapPin),
+  Briefcase: lucide(BriefcaseBusiness),
+  File: lucide(FileText),
+  Eye: lucide(Eye),
+  Plus: lucide(Plus),
+  Award: lucide(Award),
+  Menu: lucide(Menu),
+  Close: lucide(X),
+  Pencil: lucide(PencilLine),
+  Logout: lucide(LogOut),
+  Trash: lucide(Trash2),
+  Link: lucide(Link2),
+  Chevron: lucide(ChevronDown),
+  Check: lucide(Check),
+  Users: lucide(Users),
+  Mail: lucide(Mail),
+  Copy: lucide(Copy),
+  Film: lucide(Clapperboard),
+  Slides: lucide(Presentation),
+  Table: lucide(Sheet),
+  Code: lucide(CodeXml),
+  Archive: lucide(FileArchive),
+  Message: lucide(MessageCircle),
+  Send: lucide(SendHorizontal),
+  ChevronLeft: lucide(ChevronLeft),
+  ChevronRight: lucide(ChevronRight),
+  Shield: lucide(ShieldCheck),
+  Smile: lucide(Smile),
+  Paperclip: lucide(Paperclip),
+  DoubleCheck: lucide(CheckCheck),
+  Photo: lucide(Image),
+  Mic: lucide(Mic),
+  Play: lucide(Play),
+  Pause: lucide(Pause),
+  Stop: lucide(Square),
+  Globe: lucide(Globe),
+  Folder: lucide(Folder),
   VerifiedSeal,
-  Pencil,
-  Logout,
-  Trash,
-  Link: LinkIcon,
-  Chevron,
-  Check,
-  Users,
-  Mail,
   Gmail,
   Instagram,
-  Copy,
-  Film,
-  Slides,
-  Table,
-  Code,
-  Archive,
-  Message,
-  Send,
-  ChevronLeft,
-  ChevronRight,
-  Shield,
-  Smile,
-  Paperclip,
-  DoubleCheck,
-  Photo,
-  Mic,
-  Play,
-  Pause,
-  Stop,
-  Globe,
-  Folder,
 }
 
 export default Icons
