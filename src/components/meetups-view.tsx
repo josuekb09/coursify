@@ -3,8 +3,32 @@ import Icons from "@/components/icons"
 import MeetupModal from "@/components/meetup-modal"
 import { VERIFIED_ONLY, useApp } from "@/store"
 import type { Meetup } from "@/types"
-import { isHttpUrl, isUpcomingEvent, mapsEmbedUrl, mapsSearchUrl, meetingProvider } from "@/utils"
-import { useMemo, useState } from "react"
+import { durationLabel, templateFor } from "@/meetup-templates"
+import {
+  googleCalendarUrl,
+  isHttpUrl,
+  isUpcomingEvent,
+  mapsEmbedUrl,
+  mapsSearchUrl,
+  meetingProvider,
+  meetupEnd,
+  meetupIcs,
+} from "@/utils"
+import { useEffect, useMemo, useRef, useState } from "react"
+
+/** Re-renders every `ms` so countdowns stay current. */
+function useNow(ms = 30_000) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), ms)
+    return () => window.clearInterval(id)
+  }, [ms])
+  return now
+}
+
+function dayKey(date: Date) {
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
+}
 
 type EventFilter = "upcoming" | "in-person" | "online" | "going" | "hosting"
 
@@ -38,9 +62,28 @@ export default function MeetupsView({ query, onAuthor }: { query: string; onAuth
   }
   const me = currentUser?.id ?? ""
   const needle = query.trim().toLowerCase()
+  const [day, setDay] = useState<string | null>(null)
+
+  // The next two weeks, with how many upcoming meetups fall on each day.
+  const days = useMemo(() => {
+    const perDay = new Map<string, number>()
+    for (const event of events) {
+      if (!isUpcomingEvent(event)) continue
+      const key = dayKey(new Date(event.startsAt))
+      perDay.set(key, (perDay.get(key) ?? 0) + 1)
+    }
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return Array.from({ length: 14 }, (_, i) => {
+      const date = new Date(today)
+      date.setDate(today.getDate() + i)
+      const key = dayKey(date)
+      return { key, date, count: perDay.get(key) ?? 0, today: i === 0 }
+    })
+  }, [events])
 
   const counts = useMemo(() => {
-    const upcoming = events.filter((event) => isUpcomingEvent(event.startsAt))
+    const upcoming = events.filter((event) => isUpcomingEvent(event))
     return {
       upcoming: upcoming.length,
       "in-person": upcoming.filter((event) => event.format === "in-person").length,
@@ -57,19 +100,20 @@ export default function MeetupsView({ query, onAuthor }: { query: string; onAuth
         if (!hay.includes(needle)) return false
       }
       // Hosting is the only view that includes past meetups, so hosts can see what they ran.
+      if (day && dayKey(new Date(event.startsAt)) !== day) return false
       if (filter === "hosting") return event.hostId === me
-      if (!isUpcomingEvent(event.startsAt)) return false
+      if (!isUpcomingEvent(event)) return false
       if (filter === "in-person" || filter === "online") return event.format === filter
       if (filter === "going") return event.rsvpIds.includes(me) && event.hostId !== me
       return true
     })
     if (filter === "hosting") {
-      const upcoming = list.filter((event) => isUpcomingEvent(event.startsAt))
-      const past = list.filter((event) => !isUpcomingEvent(event.startsAt)).reverse()
+      const upcoming = list.filter((event) => isUpcomingEvent(event))
+      const past = list.filter((event) => !isUpcomingEvent(event)).reverse()
       return [...upcoming, ...past]
     }
     return list
-  }, [authorName, events, filter, me, needle])
+  }, [authorName, day, events, filter, me, needle])
 
   return (
     <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-10">
@@ -117,6 +161,47 @@ export default function MeetupsView({ query, onAuthor }: { query: string; onAuth
         </div>
       </div>
 
+      <div className="-mx-4 mt-4 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:px-0">
+        <div className="flex gap-1.5" role="group" aria-label="Pick a day">
+          {days.map((item) => {
+            const active = day === item.key
+            return (
+              <button
+                type="button"
+                key={item.key}
+                onClick={() => setDay(active ? null : item.key)}
+                aria-pressed={active}
+                className={`flex w-[52px] shrink-0 flex-col items-center rounded-xl border py-2 transition-colors ${
+                  active
+                    ? "border-navy bg-navy text-white"
+                    : item.count
+                      ? "border-line bg-surface text-ink hover:border-line-strong"
+                      : "border-transparent text-muted hover:bg-surface"
+                }`}
+              >
+                <span className={`text-[10.5px] font-semibold uppercase tracking-[0.08em] ${active ? "text-white/70" : "text-muted"}`}>
+                  {item.today ? "Today" : item.date.toLocaleDateString("en-ZA", { weekday: "short" })}
+                </span>
+                <span className="mt-0.5 font-display text-[18px] font-bold leading-none tabular-nums">{item.date.getDate()}</span>
+                <span className="mt-1.5 flex h-1.5 gap-0.5" aria-label={`${item.count} meetups`}>
+                  {Array.from({ length: Math.min(3, item.count) }, (_, i) => (
+                    <span key={i} className={`h-1.5 w-1.5 rounded-full ${active ? "bg-white" : "bg-navy"}`} />
+                  ))}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+      {day ? (
+        <p className="mt-3 flex items-center gap-2 text-[13px] text-muted">
+          Showing {days.find((item) => item.key === day)?.date.toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long" })}
+          <button type="button" onClick={() => setDay(null)} className="font-semibold text-navy hover:underline">
+            Show all dates
+          </button>
+        </p>
+      ) : null}
+
       {filtered.length > 0 ? (
         <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
           {filtered.map((event, index) => (
@@ -154,20 +239,91 @@ export default function MeetupsView({ query, onAuthor }: { query: string; onAuth
   )
 }
 
-function relativeLabel(iso: string) {
-  const start = new Date(iso)
-  const now = new Date()
-  const diff = start.getTime() - now.getTime()
-  if (diff <= 0 && diff > -60 * 60_000) return "Happening now"
-  if (diff <= 0) return "Ended"
-  const dayMs = 86_400_000
-  const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-  const days = Math.round((startDay - today) / dayMs)
-  if (days === 0) return diff < 60 * 60_000 ? `In ${Math.max(1, Math.round(diff / 60_000))} min` : "Today"
-  if (days === 1) return "Tomorrow"
-  if (days < 7) return `In ${days} days`
-  return ""
+function liveStatus(event: Meetup, now: number) {
+  const start = new Date(event.startsAt).getTime()
+  const end = meetupEnd(event).getTime()
+  if (now >= start && now < end) return { label: "Live now", tone: "live" as const }
+  if (now >= end) return { label: "Ended", tone: "past" as const }
+  const diff = start - now
+  const minutes = Math.round(diff / 60_000)
+  if (minutes < 60) return { label: `Starts in ${Math.max(1, minutes)} min`, tone: "soon" as const }
+  const startDay = new Date(start)
+  startDay.setHours(0, 0, 0, 0)
+  const today = new Date(now)
+  today.setHours(0, 0, 0, 0)
+  const days = Math.round((startDay.getTime() - today.getTime()) / 86_400_000)
+  if (days === 0) {
+    const hours = Math.floor(minutes / 60)
+    return { label: `Starts in ${hours} h ${minutes % 60 ? `${minutes % 60} min` : ""}`.trim(), tone: "soon" as const }
+  }
+  if (days === 1) return { label: "Tomorrow", tone: "later" as const }
+  if (days < 7) return { label: `In ${days} days`, tone: "later" as const }
+  return null
+}
+
+const timeFormat: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit" }
+
+/** Google Calendar, or an .ics file for Apple Calendar and Outlook. */
+function CalendarMenu({ event }: { event: Meetup }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onDown(e: PointerEvent) {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("pointerdown", onDown)
+    return () => document.removeEventListener("pointerdown", onDown)
+  }, [open])
+
+  function downloadIcs() {
+    const blob = new Blob([meetupIcs(event)], { type: "text/calendar;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `${event.title.replace(/[^\w\s-]/g, "").replace(/\s+/g, " ").trim().slice(0, 60) || "meetup"}.ics`
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    setOpen(false)
+  }
+
+  const item = "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] text-ink hover:bg-canvas"
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[13px] font-semibold text-ink transition-colors hover:border-line-strong"
+      >
+        <Icons.CalendarPlus className="h-4 w-4" />
+        <span className="hidden sm:inline">Add to calendar</span>
+        <span className="sm:hidden">Calendar</span>
+      </button>
+      {open ? (
+        <div role="menu" className="animate-pop-in absolute bottom-full left-0 z-20 mb-2 w-56 rounded-xl border border-line bg-surface p-1 shadow-[0_12px_32px_rgba(18,20,28,0.14)]">
+          <a
+            role="menuitem"
+            href={googleCalendarUrl(event)}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setOpen(false)}
+            className={item}
+          >
+            <Icons.Calendar className="h-4 w-4 text-navy" />
+            Google Calendar
+            <Icons.ArrowUpRight className="ml-auto h-3.5 w-3.5 text-muted" />
+          </a>
+          <button type="button" role="menuitem" onClick={downloadIcs} className={item}>
+            <Icons.Download className="h-4 w-4 text-navy" />
+            Apple Calendar or Outlook
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 function MeetupCard({ event, onAuthor }: { event: Meetup; onAuthor: (id: string) => void }) {
@@ -179,13 +335,19 @@ function MeetupCard({ event, onAuthor }: { event: Meetup; onAuthor: (id: string)
   const isHost = me === event.hostId
   const going = event.rsvpIds.includes(me)
   const online = event.format === "online"
-  const upcoming = isUpcomingEvent(event.startsAt)
+  const now = useNow()
+  const upcoming = isUpcomingEvent(event)
   const start = new Date(event.startsAt)
-  const relative = relativeLabel(event.startsAt)
+  const end = meetupEnd(event)
+  const status = liveStatus(event, now)
+  const template = templateFor(event.kind)
+  const seatsLeft = event.capacity ? Math.max(0, event.capacity - event.rsvpIds.length) : null
+  const full = seatsLeft === 0
+  const [agendaOpen, setAgendaOpen] = useState(false)
   const attendees = event.rsvpIds.map((id) => educatorById(id)).filter((item) => item !== undefined)
 
   async function handleRsvp() {
-    if (busy) return
+    if (busy || (full && !going)) return
     setBusy(true)
     try {
       await toggleEventRsvp(event.id)
@@ -244,17 +406,28 @@ function MeetupCard({ event, onAuthor }: { event: Meetup; onAuthor: (id: string)
               {online ? <Icons.Video className="h-3.5 w-3.5" /> : <Icons.Pin className="h-3.5 w-3.5" />}
               {online ? "Online" : "In person"}
             </span>
-            {relative ? (
+            {template ? (
+              <span className="rounded-full bg-canvas px-2 py-0.5 text-[11.5px] font-semibold text-ink">{template.name}</span>
+            ) : null}
+            {status ? (
               <span
-                className={`rounded-full px-2 py-0.5 text-[11.5px] font-semibold ${
-                  relative === "Happening now"
+                className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11.5px] font-semibold ${
+                  status.tone === "live"
                     ? "bg-[#e7f5ee] text-online"
-                    : relative === "Ended"
-                      ? "bg-canvas text-muted"
-                      : "bg-canvas text-ink"
+                    : status.tone === "soon"
+                      ? "bg-warn-soft text-warn"
+                      : status.tone === "past"
+                        ? "bg-canvas text-muted"
+                        : "bg-canvas text-ink"
                 }`}
               >
-                {relative}
+                {status.tone === "live" ? (
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-online opacity-60" />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-online" />
+                  </span>
+                ) : null}
+                {status.label}
               </span>
             ) : null}
           </div>
@@ -263,15 +436,43 @@ function MeetupCard({ event, onAuthor }: { event: Meetup; onAuthor: (id: string)
           </h2>
           <p className="mt-1 flex items-center gap-1.5 text-[13px] text-muted">
             <Icons.Clock className="h-3.5 w-3.5 shrink-0" />
-            {start.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" })}
+            {start.toLocaleTimeString("en-ZA", timeFormat)}–{end.toLocaleTimeString("en-ZA", timeFormat)}
             <span aria-hidden="true">·</span>
-            {start.toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" })}
+            {durationLabel(Math.round((end.getTime() - start.getTime()) / 60_000))}
           </p>
         </div>
       </div>
 
       {event.description ? (
         <p className="line-clamp-3 px-5 text-[14px] leading-relaxed text-ink/80">{event.description}</p>
+      ) : null}
+
+      {event.agenda?.length ? (
+        <div className="mx-5 mt-3 rounded-xl border border-line">
+          <button
+            type="button"
+            onClick={() => setAgendaOpen((value) => !value)}
+            aria-expanded={agendaOpen}
+            className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-[13px] font-semibold text-ink"
+          >
+            <Icons.ListChecks className="h-4 w-4 text-navy" />
+            Agenda
+            <span className="font-normal text-muted">· {event.agenda.length} items</span>
+            <Icons.Chevron className={`ml-auto h-4 w-4 text-muted transition-transform ${agendaOpen ? "rotate-180" : ""}`} />
+          </button>
+          {agendaOpen ? (
+            <ol className="animate-fade-in space-y-1.5 border-t border-line px-3.5 py-3">
+              {event.agenda.map((item, index) => (
+                <li key={index} className="flex gap-2.5 text-[13px] leading-snug text-ink">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-navy-soft text-[11px] font-bold text-navy">
+                    {index + 1}
+                  </span>
+                  {item}
+                </li>
+              ))}
+            </ol>
+          ) : null}
+        </div>
       ) : null}
 
       <div className="mt-4 px-5">
@@ -338,8 +539,24 @@ function MeetupCard({ event, onAuthor }: { event: Meetup; onAuthor: (id: string)
               <Avatar key={person.id} educator={person} size={24} rounded="rounded-full" className="ring-2 ring-surface" />
             ))}
           </div>
-          <span className="text-[12.5px] text-muted">{event.rsvpIds.length} going</span>
+          <span className="text-[12.5px] text-muted">
+            {event.rsvpIds.length} going
+            {event.capacity ? (
+              <span className={full ? "font-semibold text-[#8a3b32]" : seatsLeft !== null && seatsLeft <= 3 ? "font-semibold text-warn" : ""}>
+                {" · "}
+                {full ? "Full" : `${seatsLeft} ${seatsLeft === 1 ? "seat" : "seats"} left`}
+              </span>
+            ) : null}
+          </span>
         </div>
+        {event.capacity ? (
+          <div className="h-1 w-full overflow-hidden rounded-full bg-canvas" aria-hidden="true">
+            <div
+              className={`h-full rounded-full transition-[width] ${full ? "bg-[#8a3b32]" : "bg-navy"}`}
+              style={{ width: `${Math.min(100, (event.rsvpIds.length / event.capacity) * 100)}%` }}
+            />
+          </div>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 border-t border-line bg-canvas/50 px-5 py-3">
@@ -373,14 +590,14 @@ function MeetupCard({ event, onAuthor }: { event: Meetup; onAuthor: (id: string)
             ) : upcoming ? (
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || (full && !going)}
                 onClick={() => void handleRsvp()}
                 className={`inline-flex h-9 items-center gap-1.5 rounded-lg px-3.5 text-[13px] font-semibold transition-colors disabled:opacity-60 ${
                   going ? "border border-line bg-surface text-ink hover:border-line-strong" : "bg-navy text-white hover:bg-navy-hover"
                 }`}
               >
                 {going ? <Icons.Check className="h-4 w-4 text-online" /> : null}
-                {busy ? "Saving…" : going ? "Going" : "RSVP"}
+                {busy ? "Saving…" : going ? "Going" : full ? "Full" : "RSVP"}
               </button>
             ) : (
               <span className="text-[13px] text-muted">This meetup has ended</span>
@@ -396,6 +613,7 @@ function MeetupCard({ event, onAuthor }: { event: Meetup; onAuthor: (id: string)
                 <Icons.ArrowUpRight className="h-4 w-4" />
               </a>
             ) : null}
+            {upcoming && (going || isHost) ? <CalendarMenu event={event} /> : null}
             {isHost ? (
               <button
                 type="button"

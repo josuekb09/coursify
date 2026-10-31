@@ -12,7 +12,7 @@ import { ref, uploadBytes } from "firebase/storage"
 const FOUNDER = "kabuyatambwe03@gmail.com"
 
 const env = await initializeTestEnvironment({
-  projectId: "demo-coursify",
+  projectId: "demo-coursify-rules",
   firestore: { rules: readFileSync("firestore.rules", "utf8"), host: "127.0.0.1", port: 8080 },
   storage: { rules: readFileSync("storage.rules", "utf8"), host: "127.0.0.1", port: 9199 },
 })
@@ -47,6 +47,7 @@ async function seed() {
     }
     await setDoc(doc(d, "resources/b1"), { title: "b1", authorId: "bob", downloads: 0, saves: 0 })
     await setDoc(doc(d, "events/e1"), { title: "Meetup", hostId: "alice", format: "online", rsvpIds: ["alice", "carol"] })
+    await setDoc(doc(d, "events/full"), { title: "Small", hostId: "alice", format: "online", rsvpIds: ["alice", "carol"], capacity: 2 })
     await setDoc(doc(d, "messages/m1"), { conversationId: "alice:bob", senderId: "alice", participantIds: ["alice", "bob"], body: "hi" })
     await setDoc(doc(d, "accounts/alice"), { email: "alice@school.za" })
   })
@@ -124,6 +125,9 @@ await check("cannot create a resource with inflated counters", () =>
 await check("RSVP adds yourself", () => assertSucceeds(updateDoc(doc(db(bob), "events/e1"), { rsvpIds: arrayUnion("bob") })))
 await check("RSVP cannot remove others", () => assertFails(updateDoc(doc(db(bob), "events/e1"), { rsvpIds: arrayRemove("carol") })))
 await check("RSVP cannot replace the list", () => assertFails(updateDoc(doc(db(bob), "events/e1"), { rsvpIds: ["bob"] })))
+await check("cannot RSVP to a full meetup", () => assertFails(updateDoc(doc(db(bob), "events/full"), { rsvpIds: arrayUnion("bob") })))
+await check("can still leave a full meetup", () =>
+  assertSucceeds(updateDoc(doc(db(env.authenticatedContext("carol", { email: "c@x.za" })), "events/full"), { rsvpIds: arrayRemove("carol") })))
 await check("RSVP removes yourself", () => assertSucceeds(updateDoc(doc(db(bob), "events/e1"), { rsvpIds: arrayRemove("bob") })))
 
 await check("cannot read others' messages", () =>

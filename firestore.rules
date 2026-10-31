@@ -323,7 +323,7 @@ service cloud.firestore {
     function eventKeys() {
       return [
         'title', 'description', 'hostId', 'format', 'startsAt', 'location', 'meetingUrl',
-        'rsvpIds', 'createdAt', 'updatedAt'
+        'rsvpIds', 'createdAt', 'updatedAt', 'endsAt', 'capacity', 'agenda', 'kind'
       ];
     }
 
@@ -334,6 +334,10 @@ service cloud.firestore {
         && optString(data, 'startsAt', 40)
         && optString(data, 'location', 240)
         && optWebUrl(data, 'meetingUrl', 500)
+        && optString(data, 'endsAt', 40)
+        && optString(data, 'kind', 30)
+        && (!('capacity' in data) || (data.capacity is int && data.capacity >= 2 && data.capacity <= 1000))
+        && (!('agenda' in data) || (data.agenda is list && data.agenda.size() <= 8))
         && data.rsvpIds is list && data.rsvpIds.size() <= 1000;
     }
 
@@ -360,6 +364,8 @@ service cloud.firestore {
             (
               incoming().rsvpIds.toSet().difference(existing().rsvpIds.toSet()) == [request.auth.uid].toSet()
               && existing().rsvpIds.toSet().difference(incoming().rsvpIds.toSet()).size() == 0
+              // A full meetup takes no more guests.
+              && (!('capacity' in existing()) || incoming().rsvpIds.size() <= existing().capacity)
             )
             || (
               existing().rsvpIds.toSet().difference(incoming().rsvpIds.toSet()) == [request.auth.uid].toSet()

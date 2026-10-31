@@ -206,12 +206,21 @@ await setDoc(doc(db, "events", "evt-seed-cluster"), {
   title: "Gauteng Maths & Science cluster: Paper 2 moderation",
   description: "Bring three marked scripts per class. We'll moderate together, compare memos and plan the Term 4 revision schedule.",
   hostId: uids.sipho, format: "in-person", startsAt: ahead(2, 9), location: "Morris Isaacson High School, Soweto", rsvpIds: [uids.sipho], createdAt: ago(600),
+  kind: "moderation", capacity: 4, endsAt: new Date(new Date(ahead(2, 9)).getTime() + 120 * 60_000).toISOString(),
+  agenda: ["Welcome and the moderation tool", "Cross-marking in pairs", "Agree on tolerance and common errors", "Term 4 revision schedule"],
 })
 await as("ayesha")
 await setDoc(doc(db, "events", "evt-seed-online"), {
   title: "Teaching unseen poetry: what's working in 2026",
   description: "A 45-minute online session for English HL teachers. Share one poem and one strategy that lands with Grade 12s.",
   hostId: uids.ayesha, format: "online", startsAt: ahead(5, 17), meetingUrl: "https://meet.google.com/abc-defg-hij", rsvpIds: [uids.ayesha], createdAt: ago(300),
+  kind: "workshop", endsAt: new Date(new Date(ahead(5, 17)).getTime() + 45 * 60_000).toISOString(),
+})
+await setDoc(doc(db, "events", "evt-seed-live"), {
+  title: "First-year teacher check-in",
+  description: "An informal drop-in for teachers in their first years. Ask anything.",
+  hostId: uids.ayesha, format: "online", startsAt: ago(10), endsAt: new Date(Date.now() + 35 * 60_000).toISOString(),
+  meetingUrl: "https://meet.google.com/xyz-abcd-efg", rsvpIds: [uids.ayesha], createdAt: ago(900), kind: "mentoring",
 })
 await as("thandi")
 await setDoc(doc(db, "events", "evt-seed-mine"), {

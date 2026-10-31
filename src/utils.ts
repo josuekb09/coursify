@@ -269,8 +269,72 @@ export function meetingProvider(url: string) {
   }
 }
 
-export function isUpcomingEvent(iso: string) {
-  return new Date(iso).getTime() >= Date.now() - 60 * 60 * 1000
+type Timed = { startsAt: string; endsAt?: string }
+
+/** When a meetup finishes; meetups saved before end times existed count as one hour long. */
+export function meetupEnd(event: Timed) {
+  return event.endsAt ? new Date(event.endsAt) : new Date(new Date(event.startsAt).getTime() + 60 * 60_000)
+}
+
+/** Still to come, or happening right now. */
+export function isUpcomingEvent(event: Timed) {
+  return meetupEnd(event).getTime() >= Date.now()
+}
+
+function icsDate(date: Date) {
+  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "")
+}
+
+// RFC 5545 text: escape backslashes, commas and semicolons, and write line breaks as \n.
+function icsText(value: string) {
+  return value.replace(/\\/g, "\\\\").replace(/\r?\n/g, "\\n").replace(/([,;])/g, "\\$1")
+}
+
+type CalendarMeetup = Timed & { id: string; title: string; description: string; location?: string; meetingUrl?: string; agenda?: string[] }
+
+function calendarDetails(event: CalendarMeetup) {
+  const agenda = event.agenda?.length ? `\n\nAgenda:\n${event.agenda.map((item, i) => `${i + 1}. ${item}`).join("\n")}` : ""
+  const link = event.meetingUrl ? `\n\nJoin: ${event.meetingUrl}` : ""
+  return `${event.description}${agenda}${link}\n\nOrganised on Coursify`
+}
+
+/** An .ics file every calendar app (Apple, Outlook, Google) can import, with a reminder an hour before. */
+export function meetupIcs(event: CalendarMeetup) {
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Coursify//Meetups//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    `UID:${event.id}@coursify`,
+    `DTSTAMP:${icsDate(new Date())}`,
+    `DTSTART:${icsDate(new Date(event.startsAt))}`,
+    `DTEND:${icsDate(meetupEnd(event))}`,
+    `SUMMARY:${icsText(event.title)}`,
+    `DESCRIPTION:${icsText(calendarDetails(event))}`,
+    `LOCATION:${icsText(event.location ?? event.meetingUrl ?? "Online")}`,
+    ...(event.meetingUrl ? [`URL:${event.meetingUrl}`] : []),
+    "BEGIN:VALARM",
+    "TRIGGER:-PT1H",
+    "ACTION:DISPLAY",
+    `DESCRIPTION:${icsText(event.title)}`,
+    "END:VALARM",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ]
+  return lines.join("\r\n")
+}
+
+export function googleCalendarUrl(event: CalendarMeetup) {
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: event.title,
+    dates: `${icsDate(new Date(event.startsAt))}/${icsDate(meetupEnd(event))}`,
+    details: calendarDetails(event),
+    location: event.location ?? event.meetingUrl ?? "",
+  })
+  return `https://calendar.google.com/calendar/render?${params.toString()}`
 }
 
 /**

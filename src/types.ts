@@ -161,7 +161,15 @@ export type Meetup = {
   meetingUrl?: string
   rsvpIds: string[]
   createdAt: string
+  /** When it finishes; older meetups without it are treated as one hour long. */
+  endsAt?: string
+  /** Seats including the host; guests can't RSVP once it's full. */
+  capacity?: number
+  agenda?: string[]
+  kind?: MeetupKind
 }
+
+export type MeetupKind = "moderation" | "cluster" | "planning" | "marking" | "mentoring" | "workshop" | "social"
 
 export type MeetupInput = {
   title: string
@@ -170,6 +178,10 @@ export type MeetupInput = {
   startsAt: string
   location?: string
   meetingUrl?: string
+  durationMinutes?: number
+  capacity?: number | null
+  agenda?: string[]
+  kind?: MeetupKind
 }
 
 export type UploadInput = {

@@ -1,6 +1,7 @@
 import Icons from "@/components/icons"
 import { mapsEmbedUrl, mapsSearchUrl, meetingProvider, normalizeMeetingUrl } from "@/utils"
 import { useApp } from "@/store"
+import { DURATIONS, MEETUP_TEMPLATES, durationLabel, type MeetupTemplate } from "@/meetup-templates"
 import type { EventFormat, MeetupInput } from "@/types"
 import { useEffect, useState, type FormEvent } from "react"
 
@@ -36,7 +37,35 @@ export default function MeetupModal({ onClose }: { onClose: () => void }) {
     startsAt: defaultStartsAt(),
     location: "",
     meetingUrl: "",
+    durationMinutes: 60,
+    capacity: null,
+    agenda: [],
   })
+  const [newItem, setNewItem] = useState("")
+
+  // Picking the active template again clears what it filled in.
+  function applyTemplate(template: MeetupTemplate) {
+    setForm((current) => {
+      const off = current.kind === template.kind
+      return {
+        ...current,
+        kind: off ? undefined : template.kind,
+        title: off ? "" : template.title,
+        description: off ? "" : template.description,
+        agenda: off ? [] : template.agenda,
+        durationMinutes: template.durationMinutes,
+        format: template.format,
+      }
+    })
+    setError(null)
+  }
+
+  function addAgendaItem() {
+    const item = newItem.trim()
+    if (!item || (form.agenda?.length ?? 0) >= 8) return
+    setForm({ ...form, agenda: [...(form.agenda ?? []), item.slice(0, 120)] })
+    setNewItem("")
+  }
   // The map iframe reloads whenever its URL changes, so only update it once typing pauses.
   const [mapQuery, setMapQuery] = useState("")
 
@@ -105,7 +134,30 @@ export default function MeetupModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        <fieldset disabled={busy} className="space-y-4 px-5 py-5 sm:px-6">
+        <fieldset disabled={busy} className="min-w-0 space-y-4 px-5 py-5 sm:px-6">
+          <div>
+            <span className={label}>Start from a template</span>
+            <div className="-mx-5 flex gap-2 overflow-x-auto px-5 pb-1 [scrollbar-width:none] sm:-mx-6 sm:px-6">
+              {MEETUP_TEMPLATES.map((template) => {
+                const active = form.kind === template.kind
+                return (
+                  <button
+                    type="button"
+                    key={template.kind}
+                    onClick={() => applyTemplate(template)}
+                    aria-pressed={active}
+                    title={template.blurb}
+                    className={`shrink-0 rounded-full border px-3 py-1.5 text-[12.5px] font-semibold transition-colors ${
+                      active ? "border-navy bg-navy text-white" : "border-line text-ink hover:border-line-strong"
+                    }`}
+                  >
+                    {template.name}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-2">
             {formats.map((item) => {
               const active = form.format === item.id
@@ -150,16 +202,32 @@ export default function MeetupModal({ onClose }: { onClose: () => void }) {
             />
           </label>
 
-          <label className="block">
-            <span className={label}>Date and time</span>
-            <input
-              type="datetime-local"
-              value={form.startsAt}
-              min={toLocalInput(new Date())}
-              onChange={(event) => setForm({ ...form, startsAt: event.target.value })}
-              className={field}
-            />
-          </label>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+            <label className="block">
+              <span className={label}>Date and time</span>
+              <input
+                type="datetime-local"
+                value={form.startsAt}
+                min={toLocalInput(new Date())}
+                onChange={(event) => setForm({ ...form, startsAt: event.target.value })}
+                className={field}
+              />
+            </label>
+            <label className="block">
+              <span className={label}>Length</span>
+              <select
+                value={form.durationMinutes}
+                onChange={(event) => setForm({ ...form, durationMinutes: Number(event.target.value) })}
+                className={field}
+              >
+                {DURATIONS.map((minutes) => (
+                  <option key={minutes} value={minutes}>
+                    {durationLabel(minutes)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
 
           {form.format === "in-person" ? (
             <div>
@@ -234,6 +302,75 @@ export default function MeetupModal({ onClose }: { onClose: () => void }) {
               maxLength={1200}
               className="w-full resize-none rounded-xl border border-line bg-canvas px-3 py-2.5 text-sm leading-relaxed text-ink outline-none transition-shadow focus:border-navy focus:bg-surface focus:shadow-[0_0_0_4px_rgba(26,43,74,0.10)]"
               placeholder="Share the agenda and what people should bring, e.g. marked scripts, the ATP, or a question for the group."
+            />
+          </label>
+
+          <div>
+            <span className={label}>
+              Agenda <span className="font-normal text-muted">(optional)</span>
+            </span>
+            {form.agenda?.length ? (
+              <ol className="mb-2 space-y-1.5">
+                {form.agenda.map((item, index) => (
+                  <li key={`${index}-${item}`} className="flex items-center gap-2.5 rounded-xl border border-line bg-surface px-3 py-2 text-[13.5px] text-ink">
+                    <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-navy-soft text-[11px] font-bold text-navy">
+                      {index + 1}
+                    </span>
+                    <span className="min-w-0 flex-1">{item}</span>
+                    <button
+                      type="button"
+                      onClick={() => setForm({ ...form, agenda: form.agenda?.filter((_, i) => i !== index) })}
+                      className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-muted hover:bg-canvas hover:text-ink"
+                      aria-label={`Remove ${item}`}
+                    >
+                      <Icons.Close className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            ) : null}
+            {(form.agenda?.length ?? 0) < 8 ? (
+              <div className="flex gap-2">
+                <input
+                  value={newItem}
+                  onChange={(event) => setNewItem(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault()
+                      addAgendaItem()
+                    }
+                  }}
+                  maxLength={120}
+                  className={field}
+                  placeholder={form.agenda?.length ? "Add another item" : "e.g. Memo discussion"}
+                />
+                <button
+                  type="button"
+                  onClick={addAgendaItem}
+                  disabled={!newItem.trim()}
+                  className="h-11 shrink-0 rounded-xl border border-line px-3.5 text-[13px] font-semibold text-ink hover:border-line-strong disabled:opacity-40"
+                >
+                  Add
+                </button>
+              </div>
+            ) : null}
+          </div>
+
+          <label className="flex items-center justify-between gap-4 rounded-xl border border-line px-3.5 py-3">
+            <span className="min-w-0">
+              <span className="block text-[13px] font-semibold text-ink">Limit seats</span>
+              <span className="block text-[12px] text-muted">For a classroom or a small venue. Includes you.</span>
+            </span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={2}
+              max={1000}
+              value={form.capacity ?? ""}
+              onChange={(event) => setForm({ ...form, capacity: event.target.value ? Number(event.target.value) : null })}
+              placeholder="No limit"
+              aria-label="Seats"
+              className="h-10 w-28 shrink-0 rounded-xl border border-line bg-canvas px-3 text-right text-sm text-ink outline-none focus:border-navy focus:bg-surface"
             />
           </label>
 

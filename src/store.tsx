@@ -324,6 +324,10 @@ function toMeetup(id: string, data: Record<string, unknown>): Meetup | null {
   }
   if (typeof data.location === "string" && data.location.trim()) meetup.location = data.location.trim()
   if (typeof data.meetingUrl === "string" && data.meetingUrl.trim()) meetup.meetingUrl = data.meetingUrl.trim()
+  if (typeof data.endsAt === "string" && data.endsAt) meetup.endsAt = data.endsAt
+  if (typeof data.capacity === "number" && data.capacity >= 2) meetup.capacity = data.capacity
+  if (Array.isArray(data.agenda)) meetup.agenda = data.agenda.map(String).filter(Boolean).slice(0, 8)
+  if (typeof data.kind === "string" && data.kind) meetup.kind = data.kind as Meetup["kind"]
   return meetup
 }
 
@@ -2064,6 +2068,9 @@ export default function AppProvider({ children }: { children: ReactNode }) {
         if (!meetingUrl) return "Add a valid meeting link, e.g. https://meet.google.com/abc-defg-hij"
         input = { ...input, meetingUrl }
       }
+      const duration = Math.min(12 * 60, Math.max(15, Math.round(input.durationMinutes ?? 60)))
+      const capacity = input.capacity ? Math.min(1000, Math.max(2, Math.round(input.capacity))) : undefined
+      const agenda = (input.agenda ?? []).map((item) => sanitizePlainText(item, 120)).filter(Boolean).slice(0, 8)
       try {
         const eventId = uid("evt")
         const location = input.format === "in-person" ? sanitizePlainText(input.location ?? "", 240) : ""
@@ -2077,6 +2084,10 @@ export default function AppProvider({ children }: { children: ReactNode }) {
               hostId: authUser.uid,
               format: input.format,
               startsAt: startsAt.toISOString(),
+              endsAt: new Date(startsAt.getTime() + duration * 60_000).toISOString(),
+              capacity,
+              agenda: agenda.length ? agenda : undefined,
+              kind: input.kind,
               location: location || undefined,
               meetingUrl: meetingUrl || undefined,
               rsvpIds: [authUser.uid],
@@ -2099,6 +2110,9 @@ export default function AppProvider({ children }: { children: ReactNode }) {
       const meetup = events.find((item) => item.id === eventId)
       if (!meetup) return
       const going = meetup.rsvpIds.includes(authUser.uid)
+      if (!going && meetup.capacity && meetup.rsvpIds.length >= meetup.capacity) {
+        throw new Error("This meetup is full.")
+      }
       try {
         await timedWrite(
           updateDoc(doc(getFirebaseDb(), "events", eventId), {
